@@ -23,10 +23,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    (engineering, fishing, tailoring, ...) because bots never learn trade skills, gear gated by a reputation
    standing, an honor rank, a pvp reward, a world event or a holiday, the gear of the other faction, trinkets,
    relics, tabards and shirts.
-2. No pick up bound epic gear at all. Pick up bound **blue** gear that comes from a quest or an instance is
-   allowed only when its **item level** is at or below the level of the bot - the point is to keep a bot from
-   wearing over tuned gear, so `RequiredLevel` is deliberately not the test. Gear bound when equipped is limited
-   by its required level only.
+2. No pick up bound epic gear at all. Pick up bound gear of **green** or **blue** quality that comes from a quest
+   or an instance is allowed only when its **item level** is at or below the level of the bot - the point is to
+   keep a bot from wearing over tuned gear, so `RequiredLevel` is deliberately not the test. Gear bound when
+   equipped is limited by its required level only.
 3. Dual wield and two handed capability are settled before the gear is chosen, by `PrepareDualWield()`: spell 674
    is taught at the level where a player learns it from a trainer (rogue at 10, warrior and hunter at 20), and it
    is called again for the bots loaded from the database (`PartyBotAI`). An enhancement shaman goes to two handed
@@ -40,6 +40,9 @@ document and the code in step - it is what the maintainer reads to tune the valu
    melee weapons of a hunter are rated by attributes, comparing {two handed weapon or staff} against {one handed
    weapon + off hand item}. Wands are rated by attributes; relics are not worn; the damage that a random property
    adds to a weapon is not part of the damage used for ranking.
+   Warriors of any talent and the combat rogue wear no dagger and no fist weapon in either hand;
+   `allowDaggersAndFistWeapons` of `BotGearWeaponRules` says it, and the items of those kinds never reach the
+   candidate pool of such a bot, so no slot of it can hold one.
 5. The random property of an item is read from its `item_enchantment_template` group, scored together with the
    item, and then fixed on the created item. That is why `Player::StoreNewItemInSlot()` exists:
    `Player::StoreNewItemInBestSlots()` rolls another property, so the bot would wear something other than what
@@ -84,8 +87,6 @@ created new), defense rating, weapon skills.
 - `Player::CanDualWield()` reads `m_canDualWield`, which is false after construction and is never set anywhere
   else, and `SKILL_DUAL_WIELD` has no grant path. Spell 674 is taught directly for that reason; a bot loaded from
   the database would otherwise lose the second weapon.
-- Whether pick up bound **green** quest and instance gear should get the same item level gate as blue gear is an
-  open question. Only blue is gated today.
 
 ## Commands of this subsystem
 - The handlers live in `PlayerBotMgr.cpp`; the sub command tables of `.partybot` and `.bot` are in

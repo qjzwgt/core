@@ -2902,6 +2902,12 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
         if (pProto->InventoryType == INVTYPE_TRINKET || pProto->InventoryType == INVTYPE_RELIC)
             continue;
 
+        // The kinds of weapon that the talent of the bot refuses. The items of those kinds are out of the
+        // candidates and not only out of one slot, so that neither hand of a warrior or of a combat rogue can
+        // wear a light weapon.
+        if (IsWeaponKindRefused(pProto, weaponRules))
+            continue;
+
         // The gear that can only be used with a trade skill, as the engineering and the fishing gear, is not for
         // a bot, which does not learn any trade skill
         if (pProto->RequiredSkill)
@@ -2936,16 +2942,17 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
             continue;
 
         // The gear that a player can only get by picking it up is the reward of a content that a bot does not
-        // reach: no epic of that kind at all, and the rare ones (ITEM_QUALITY_RARE, the blue gear) that the
-        // quests and the instances drop must not be gear made for a level higher than the level of the bot, which
-        // would make the game too easy for it. The gear that is bound when it is equipped is limited by the level
-        // that it requires, which CanUseItem below checks.
+        // reach: no epic of that kind at all, and the uncommon (ITEM_QUALITY_UNCOMMON, the green gear) and the
+        // rare (ITEM_QUALITY_RARE, the blue gear) ones that the quests and the instances drop must not be gear
+        // made for a level higher than the level of the bot, which would make the game too easy for it. The gear
+        // that is bound when it is equipped is limited by the level that it requires, which CanUseItem below
+        // checks.
         if (pProto->Bonding == BIND_WHEN_PICKED_UP)
         {
             if (pProto->Quality >= ITEM_QUALITY_EPIC)
                 continue;
 
-            if (pProto->Quality == ITEM_QUALITY_RARE &&
+            if (pProto->Quality >= ITEM_QUALITY_UNCOMMON &&
                (pProto->SourceKinds & (GEAR_SOURCE_QUEST_REWARD | GEAR_SOURCE_INSTANCE_LOOT)) &&
                pProto->ItemLevel > me->GetLevel())
                 continue;

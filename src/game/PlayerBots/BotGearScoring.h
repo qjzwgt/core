@@ -82,6 +82,10 @@ struct BotGearWeaponRules
     BotGearWeaponPolicy policy = GEAR_WEAPON_POLICY_NONE;
     bool byWeaponDamage = false;                      // rank the weapons by their damage, not by their score
     bool rangedWeapon = false;                        // the ranged slot holds a weapon, not a wand
+    // False when the talent wears neither a dagger nor a fist weapon. The weapon slots of such a talent are ranked
+    // by the damage of the weapon, and there the light kinds win, which is not how a player of these talents is
+    // dressed; the rule belongs to the talent and not to one slot, so that neither hand can wear one.
+    bool allowDaggersAndFistWeapons = true;
 };
 
 // The number of talent pages a class has (TalentTabEntry.tabpage), also used as "no talent page was asked for"
@@ -113,6 +117,8 @@ struct BotGearItemValue
 BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role);
 // How the weapon slots of a bot of that talent must be filled
 BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec);
+// True when the talent refuses this kind of weapon: such an item is not a candidate for that bot, in any slot.
+bool IsWeaponKindRefused(ItemPrototype const* proto, BotGearWeaponRules const& rules);
 
 // The talent asked by an abbreviation of `.partybot add`, nullptr when the argument is not one or when it belongs
 // to the other faction than `team`

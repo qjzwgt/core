@@ -100,9 +100,10 @@ An item is a candidate only when:
 - it belongs to the faction of the bot, or to both (`SourceTeams`);
 - it is a level appropriate for the bot, which also excludes the items that have no required level but an item
   level above it, and the rewards of quests above its level;
-- it is not pick up bound epic gear at all, and the pick up bound **blue** gear (`ITEM_QUALITY_RARE`, the "rare"
-  quality) of quests and instances has an item level equal to or below the level of the bot, so that a bot can not
-  wear gear that is over tuned for its level; gear bound when equipped is only limited by its required level;
+- it is not pick up bound epic gear at all, and the pick up bound **green** (`ITEM_QUALITY_UNCOMMON`) and **blue**
+  (`ITEM_QUALITY_RARE`, the "rare" quality) gear of quests and instances has an item level equal to or below the
+  level of the bot, so that a bot can not wear gear that is over tuned for its level; gear bound when equipped is
+  only limited by its required level;
 - the bot can use it (`Player::CanUseItem`: class, race, level, required spell, weapon proficiency) and knows the
   armour proficiency of the item.
 
@@ -155,6 +156,13 @@ Where the damage decides, the attributes of the weapon are ignored completely, a
 are chosen randomly. The damage is the one of the tooltip, without the damage that a random property adds. A shield
 is chosen by its armor, and the armor of a shield is not added to the score of the options when a two handed weapon
 is compared with a one handed weapon and an off hand item.
+
+Warriors of every talent and the combat rogue wear neither a dagger nor a fist weapon, in either hand.
+`allowDaggersAndFistWeapons` of `BotGearWeaponRules` says it, and the items of those kinds are not candidates for
+such a bot at all, so no slot of it can hold one: where the damage of the weapon decides, the light kinds win by
+their damage per second, and that is not how a player of these talents dresses.
+`IsWeaponKindRefused()` is the one place that reads the refusal, and `.partybot gearscore` prints it under the
+score of such an item, so the reason the weapon was never worn is visible.
 
 A bot learns the dual wield of the trainers (spell 674) at the level where a player learns it: rogues at 10,
 warriors and hunters at 20 (`PrepareDualWield()`), because `Player::CanDualWield()` is not saved with the character.
