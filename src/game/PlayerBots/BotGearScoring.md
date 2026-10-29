@@ -26,6 +26,11 @@ items, as it does when there is no template. Nothing else is needed for the gear
 from the tree the bot has and from its role, which is also what tells the cat from the bear on the feral page of the
 druid.
 
+The level of the bot follows the player that asked for it: the same level while the player is level 10 or below, a
+level or two either way from 11 to 59, and always the maximum (`MaxPlayerLevel`) once the player has reached it. The
+optional level is read only from GM accounts and from accounts with `PartyBot.SkipChecks`, and is clamped to the same
+maximum.
+
 | Abbreviation | Talent | Page of the class |
 | --- | --- | --- |
 | `wqz` `kbz` `fz` | 武器战, 狂暴战, 防战 | arms 0, fury 1, protection 2 |

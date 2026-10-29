@@ -84,5 +84,9 @@ created new), defense rating, weapon skills.
 - The talents that a bot can be summoned with are arguments of `.partybot add` and not sub commands of
   `src/game/Chat/Chat.cpp`: the list is `gearSpecAliases` in `BotGearScoring.cpp` and what every page means is in
   `BotGearScoring.md`. A new talent is a row in that list, with nothing to change in the command tables.
+- The level of a bot summoned by `.partybot add` comes from `PickPartyBotLevel()` in `PlayerBotMgr.cpp` and not
+  from the level of the player: the same level up to 10, two levels either way above that, and the maximum player
+  level once the player has it. An explicit level is parsed after the abbreviation, only for GM accounts and for
+  `PartyBot.SkipChecks`, and is clamped to `MaxPlayerLevel`.
 - Everything that reads a table of this subsystem is reached from `PlayerBotMgr::Load()`, which `.bot reload`
   calls again.

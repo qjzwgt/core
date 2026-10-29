@@ -583,6 +583,26 @@ uint8 SelectRandomRaceForClass(uint8 playerClass, Team playerTeam)
     return SelectRandomContainerElement(validRaces);
 }
 
+// A player that has just left the starting zone is still learning the basics, so a bot of the same level is the
+// only one that can follow; further into the world a level or two either way keeps the bot useful without
+// carrying the player through the content. Above that band only the maximum level is allowed, which is the
+// maximum player level of the server.
+uint32 const PARTY_BOT_SAME_LEVEL_MAX = 10;
+uint32 const PARTY_BOT_LEVEL_RANGE = 2;
+
+static uint32 PickPartyBotLevel(uint32 playerLevel)
+{
+    uint32 const maxLevel = sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL);
+
+    if (playerLevel >= maxLevel)
+        return maxLevel;
+
+    if (playerLevel <= PARTY_BOT_SAME_LEVEL_MAX)
+        return playerLevel;
+
+    return urand(playerLevel - PARTY_BOT_LEVEL_RANGE, std::min(maxLevel, playerLevel + PARTY_BOT_LEVEL_RANGE));
+}
+
 void PlayerBotMgr::AddBattleBot(BattleGroundQueueTypeId queueType, Team botTeam, uint32 botLevel, bool temporary)
 {
     std::vector<uint32> availableClasses = { CLASS_WARRIOR, CLASS_HUNTER, CLASS_ROGUE, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST, CLASS_DRUID };
@@ -883,7 +903,8 @@ bool ChatHandler::HandlePartyBotAddCommand(char* args)
     }
 
     uint8 botClass = 0;
-    uint32 botLevel = pPlayer->GetLevel();
+    uint32 botLevel = 0;
+    bool levelAsked = false;
     CombatBotRoles botRole = ROLE_INVALID;
     // The talent asked by an abbreviation of a bot; MAX_GEAR_SPEC_TABS when the argument was a class or a role,
     // which keeps the current behaviour of learning a premade build.
@@ -940,7 +961,7 @@ bool ChatHandler::HandlePartyBotAddCommand(char* args)
 
         // Prevent setting a custom level for bots unless the account is a GM or skipping checks is enabled.
         if (GetSession()->GetSecurity() > SEC_PLAYER || sWorld.getConfig(CONFIG_BOOL_PARTY_BOT_SKIP_CHECKS))
-            ExtractUInt32(&args, botLevel);
+            levelAsked = ExtractUInt32(&args, botLevel);
     }
 
     if (!botClass)
@@ -949,6 +970,13 @@ bool ChatHandler::HandlePartyBotAddCommand(char* args)
         SetSentErrorMessage(true);
         return false;
     }
+
+    // Without an explicit level the bot is levelled next to the player that asked for it, and an asked level
+    // never goes over the maximum of the server.
+    if (!levelAsked || !botLevel)
+        botLevel = PickPartyBotLevel(pPlayer->GetLevel());
+    else
+        botLevel = std::min(botLevel, sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL));
 
     uint8 botRace = SelectRandomRaceForClass(botClass, pPlayer->GetTeam());
     if (!botRace)
