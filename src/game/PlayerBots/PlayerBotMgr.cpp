@@ -12,6 +12,8 @@
 #include "PlayerBotAI.h"
 #include "PartyBotAI.h"
 #include "BattleBotAI.h"
+#include "CombatBotBaseAI.h"
+#include "BotGearScoring.h"
 #include "BattleBotWaypoints.h"
 #include "BattleGroundMgr.h"
 #include "MapManager.h"
@@ -73,6 +75,10 @@ void PlayerBotMgr::Load()
 
     // 2- Configuration
     LoadConfig();
+
+    // The values that rate the gear that the bots are dressed with, read again so that they can be changed
+    // without restarting the server
+    LoadBotGearStatWeights();
 
     // 3- Load usable account ID
     std::unique_ptr<QueryResult> result = LoginDatabase.PQuery(
@@ -1834,6 +1840,38 @@ bool ChatHandler::HandlePartyBotUnequipCommand(char* args)
     }
 
     SendSysMessage("Target is not a party bot.");
+    SetSentErrorMessage(true);
+    return false;
+}
+
+bool ChatHandler::HandlePartyBotGearScoreCommand(char* args)
+{
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget)
+    {
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    char* cId = ExtractKeyFromLink(&args, "Hitem");
+    if (!cId)
+        return false;
+
+    uint32 itemId = 0;
+    if (!ExtractUInt32(&cId, itemId))
+        return false;
+
+    if (pTarget->AI())
+    {
+        if (CombatBotBaseAI* pAI = dynamic_cast<CombatBotBaseAI*>(pTarget->AI()))
+        {
+            pAI->PrintGearItemScore(*this, itemId);
+            return true;
+        }
+    }
+
+    SendSysMessage("Target is not a bot.");
     SetSentErrorMessage(true);
     return false;
 }

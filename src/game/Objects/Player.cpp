@@ -650,6 +650,32 @@ bool Player::StoreNewItemInBestSlots(uint32 itemId, uint32 amount, uint32 enchan
     return false;
 }
 
+bool Player::StoreNewItemInSlot(uint8 slot, uint32 itemId, int32 randomPropertyId)
+{
+    uint16 eDest = 0;
+    if (CanEquipNewItem(slot, eDest, itemId, false) != EQUIP_ERR_OK)
+        return false;
+
+    Item* pItem = EquipNewItem(eDest, itemId, true);
+    if (!pItem)
+        return false;
+
+    // The random property can not be chosen while creating the item, and the mods of the item are applied while it
+    // is equipped, so they must be applied again with the property that was chosen for the item.
+    if (randomPropertyId > 0)
+    {
+        pItem->SetItemRandomProperties(randomPropertyId);
+
+        uint8 eSlot = eDest & 255;
+        _ApplyItemMods(pItem, eSlot, false);
+        _ApplyItemMods(pItem, eSlot, true);
+    }
+
+    AutoUnequipOffhandIfNeed();
+
+    return true;
+}
+
 // helper function, mainly for script side, but can be used for simple task in mangos also.
 Item* Player::StoreNewItemInInventorySlot(uint32 itemId, uint32 amount)
 {

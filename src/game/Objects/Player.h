@@ -948,6 +948,9 @@ class Player final: public Unit
         void SatisfyItemRequirements(ItemPrototype const* pItem);
         void AddStartingItems();
         bool StoreNewItemInBestSlots(uint32 itemId, uint32 amount, uint32 enchantId = 0);
+        // Creates an item of a fixed random property and equips it in one equipment slot, used to dress the
+        // equipment slots of the bots one by one when the position of the items of one slot depends on the others
+        bool StoreNewItemInSlot(uint8 slot, uint32 itemId, int32 randomPropertyId);
         Item* StoreNewItemInInventorySlot(uint32 itemId, uint32 amount);
         void AutoStoreLoot(Loot& loot, bool broadcast = false, uint8 bag = NULL_BAG, uint8 slot = NULL_SLOT);
         void SetAmmo(uint32 item);

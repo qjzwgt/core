@@ -127,3 +127,20 @@ uint32 GetItemEnchantMod(uint32 entry)
 
     return 0;
 }
+
+std::vector<uint32> GetItemEnchantMods(uint32 entry)
+{
+    std::vector<uint32> mods;
+
+    if (!entry)
+        return mods;
+
+    EnchantmentStore::const_iterator tab = RandomItemEnch.find(entry);
+    if (tab == RandomItemEnch.end())
+        return mods;
+
+    for (auto const& ench_iter : tab->second)
+        mods.push_back(ench_iter.ench);
+
+    return mods;
+}

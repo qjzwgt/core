@@ -654,6 +654,10 @@ void PartyBotAI::UpdateAI(uint32 const diff)
             if (m_role == ROLE_INVALID)
                 AutoAssignRole();
 
+            // The right to wear a weapon in the other hand is not saved with the character, so the bot that was
+            // dressed with two weapons must take it back from the spell that it learned before it fights again.
+            PrepareDualWield();
+
             if (me->IsGameMaster())
                 me->SetGameMaster(false);
 

@@ -10,6 +10,7 @@
 #include "SpellAuras.h"
 #include "Chat.h"
 #include "CharacterDatabaseCache.h"
+#include "BotGearScoring.h"
 #include "Utilities/Random.h"
 
 #include <random>
@@ -2560,56 +2561,221 @@ void CombatBotBaseAI::EquipPremadeGearTemplate()
     }
 }
 
-inline uint32 GetPrimaryItemStatForClassAndRole(uint8 playerClass, uint8 role)
+namespace
 {
-    switch (playerClass)
+    // The trainers of the cities teach the dual wield with this spell
+    constexpr uint32 SPELL_DUAL_WIELD = 674;
+
+    // What says that one candidate of a slot is better than another: the score of its attributes, the damage that
+    // a weapon does, or the armor that a shield gives
+    enum GearCandidateKey
     {
-        case CLASS_WARRIOR:
+        GEAR_KEY_SCORE = 0,
+        GEAR_KEY_WEAPON_DAMAGE,
+        GEAR_KEY_ARMOR,
+    };
+
+    struct BotGearCandidate
+    {
+        ItemPrototype const* proto = nullptr;
+        BotGearItemValue value;
+        float weaponDamage = 0.0f;
+    };
+
+    float GetGearCandidateKey(BotGearCandidate const& candidate, GearCandidateKey key)
+    {
+        switch (key)
         {
-            return ITEM_MOD_STRENGTH;
-        }
-        case CLASS_PALADIN:
-        {
-            return ((role == ROLE_HEALER) ? ITEM_MOD_INTELLECT : ITEM_MOD_STRENGTH);
-        }
-        case CLASS_HUNTER:
-        case CLASS_ROGUE:
-        {
-            return ITEM_MOD_AGILITY;
-        }
-        case CLASS_SHAMAN:
-        case CLASS_DRUID:
-        {
-            return ((role == ROLE_MELEE_DPS || role == ROLE_TANK) ? ITEM_MOD_AGILITY : ITEM_MOD_INTELLECT);
-        }
-        case CLASS_PRIEST:
-        case CLASS_MAGE:
-        case CLASS_WARLOCK:
-        {
-            return ITEM_MOD_INTELLECT;
+            case GEAR_KEY_WEAPON_DAMAGE:
+                return candidate.weaponDamage;
+            case GEAR_KEY_ARMOR:
+                return float(candidate.proto->Armor);
+            default:
+                return candidate.value.score;
         }
     }
-    return ITEM_MOD_STAMINA;
+
+    bool IsTwoHandedWeapon(ItemPrototype const* proto)
+    {
+        return proto->InventoryType == INVTYPE_2HWEAPON;
+    }
+
+    bool IsOneHandedWeapon(ItemPrototype const* proto)
+    {
+        return proto->InventoryType == INVTYPE_WEAPON || proto->InventoryType == INVTYPE_WEAPONMAINHAND;
+    }
+
+    bool IsShield(ItemPrototype const* proto)
+    {
+        return proto->InventoryType == INVTYPE_SHIELD;
+    }
+
+    bool IsOffHandWeapon(ItemPrototype const* proto)
+    {
+        return proto->InventoryType == INVTYPE_WEAPON || proto->InventoryType == INVTYPE_WEAPONOFFHAND;
+    }
+
+    bool IsAnyOffHandItem(ItemPrototype const* proto)
+    {
+        return IsShield(proto) || IsOffHandWeapon(proto) || proto->InventoryType == INVTYPE_HOLDABLE;
+    }
+
+    bool IsRangedWeapon(ItemPrototype const* proto)
+    {
+        return proto->InventoryType == INVTYPE_RANGED &&
+            (proto->SubClass == ITEM_SUBCLASS_WEAPON_BOW || proto->SubClass == ITEM_SUBCLASS_WEAPON_GUN ||
+                proto->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW);
+    }
+
+    bool IsWand(ItemPrototype const* proto)
+    {
+        return proto->InventoryType == INVTYPE_RANGEDRIGHT && proto->SubClass == ITEM_SUBCLASS_WEAPON_WAND;
+    }
+
+    bool IsAnyGear(ItemPrototype const*)
+    {
+        return true;
+    }
+
+    // The candidate that gives the most of what the slot is rated by and that the bot does not wear yet. When
+    // more than one give the same, one of them is chosen, because two players do not choose the same item.
+    template<class Predicate>
+    BotGearCandidate const* SelectGearCandidate(std::vector<BotGearCandidate> const& candidates,
+        GearCandidateKey key, std::set<uint32> const& wornEntries, Predicate allowed)
+    {
+        float best = 0.0f;
+        bool found = false;
+
+        for (auto const& candidate : candidates)
+        {
+            if (wornEntries.count(candidate.proto->ItemId) || !allowed(candidate.proto))
+                continue;
+
+            float const value = GetGearCandidateKey(candidate, key);
+            if (!found || value > best)
+            {
+                best = value;
+                found = true;
+            }
+        }
+
+        if (!found)
+            return nullptr;
+
+        // A weapon that does no damage or a shield without armor is not a weapon or a shield for its slot
+        if (key != GEAR_KEY_SCORE && best <= 0.0f)
+            return nullptr;
+
+        std::vector<BotGearCandidate const*> sameValue;
+        for (auto const& candidate : candidates)
+        {
+            if (wornEntries.count(candidate.proto->ItemId) || !allowed(candidate.proto))
+                continue;
+
+            if (GetGearCandidateKey(candidate, key) >= best - 0.001f)
+                sameValue.push_back(&candidate);
+        }
+
+        return SelectRandomContainerElement(sameValue);
+    }
+
+    // The score that a two handed weapon gives, against the score of a one handed weapon and of what can be worn
+    // in the offhand with it, to know which of the two ways of dressing the weapon slots gives the most
+    template<class PredicateOneHanded, class PredicateOffHand>
+    void SelectWeaponPairByScore(std::vector<BotGearCandidate> const& mainHandCandidates,
+        std::vector<BotGearCandidate> const& offHandCandidates, std::set<uint32> const& wornEntries,
+        BotGearCandidate const*& mainHand, BotGearCandidate const*& offHand,
+        PredicateOneHanded oneHanded, PredicateOffHand offHandItem)
+    {
+        BotGearCandidate const* twoHanded = SelectGearCandidate(mainHandCandidates, GEAR_KEY_SCORE, wornEntries,
+            IsTwoHandedWeapon);
+        BotGearCandidate const* bestOneHanded = SelectGearCandidate(mainHandCandidates, GEAR_KEY_SCORE, wornEntries,
+            oneHanded);
+
+        // The two hands can not wear two copies of the same item
+        std::set<uint32> otherHandEntries = wornEntries;
+        if (bestOneHanded)
+            otherHandEntries.insert(bestOneHanded->proto->ItemId);
+
+        BotGearCandidate const* bestOffHand = SelectGearCandidate(offHandCandidates, GEAR_KEY_SCORE,
+            otherHandEntries, offHandItem);
+
+        float const twoHandedScore = twoHanded ? twoHanded->value.score : 0.0f;
+        float const pairScore = (bestOneHanded ? bestOneHanded->value.score : 0.0f) +
+            (bestOffHand ? bestOffHand->value.score : 0.0f);
+
+        if (twoHanded && (!bestOneHanded || twoHandedScore > pairScore))
+        {
+            mainHand = twoHanded;
+            return;
+        }
+
+        mainHand = bestOneHanded;
+        offHand = bestOffHand;
+    }
 }
 
+// The trainers teach the dual wield to the rogues at level 10 and to the warriors and the hunters at level 20,
+// and the effect of the spell is not applied again when the bot is logged in, so it must be applied again before
+// the gear of the bot is chosen, and the other classes learn it with their talents.
+bool CombatBotBaseAI::PrepareDualWield()
+{
+    uint32 requiredLevel = 0;
+    switch (me->GetClass())
+    {
+        case CLASS_ROGUE:
+            requiredLevel = 10;
+            break;
+        case CLASS_WARRIOR:
+        case CLASS_HUNTER:
+            requiredLevel = 20;
+            break;
+        default:
+            break;
+    }
+
+    if (!me->HasSpell(SPELL_DUAL_WIELD) && requiredLevel && me->GetLevel() >= requiredLevel)
+        me->LearnSpell(SPELL_DUAL_WIELD, false, false);
+
+    if (me->HasSpell(SPELL_DUAL_WIELD))
+    {
+        me->SetCanDualWield(true);
+        return true;
+    }
+
+    return me->CanDualWield();
+}
+
+// Dress the empty equipment slots of the bot with the gear that a player of its talent could realistically have
+// got at its level, and rate every item by the attributes that it gives to that talent.
 void CombatBotBaseAI::EquipRandomGearInEmptySlots()
 {
     LearnArmorProficiencies();
 
-    bool const onlyPvE = urand(0, 1) != 0;
-    uint8 const honorRank = onlyPvE ? 0 : urand(5, 18);
+    bool const canDualWield = PrepareDualWield();
 
-    std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>> itemsPerSlot;
+    BotGearSpec const spec = GetBotGearSpec(me, m_role);
+    BotGearWeaponRules const weaponRules = GetBotWeaponRules(me, spec);
+
+    std::map<uint32 /*slot*/, std::vector<BotGearCandidate>> candidatesPerSlot;
+
     for (auto const& itr : sObjectMgr.GetItemPrototypeMap())
     {
         ItemPrototype const* pProto = &itr.second;
 
-        // Only items that have already been discovered by someone
-        if (!pProto->Discovered)
+        // Only the items that someone has already got, and the ones that the world drops or that a profession
+        // makes, which are the gear that a player of the level of the bot can realistically have
+        if (!pProto->Discovered &&
+            !(pProto->SourceKinds & (GEAR_SOURCE_WORLD_LOOT | GEAR_SOURCE_CRAFTED)))
             continue;
 
         // Skip unobtainable items
         if (pProto->HasExtraFlag(ITEM_EXTRA_NOT_OBTAINABLE))
+            continue;
+
+        // No gear that a player has to earn with a reputation standing or an honor rank, and no gear that is
+        // only available while a world event or a holiday is active
+        if (pProto->SourceRestrictions)
             continue;
 
         // Only gear and weapons
@@ -2620,7 +2786,21 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
         if (pProto->InventoryType == INVTYPE_TABARD || pProto->InventoryType == INVTYPE_BODY)
             continue;
 
+        // The effects of the trinkets are not rated, and the relics of the class are not worn by the bots
+        if (pProto->InventoryType == INVTYPE_TRINKET || pProto->InventoryType == INVTYPE_RELIC)
+            continue;
+
+        // The gear that can only be used with a trade skill, as the engineering and the fishing gear, is not for
+        // a bot, which does not learn any trade skill
+        if (pProto->RequiredSkill)
+            continue;
+
         if (pProto->SourceQuestRaces && !(pProto->SourceQuestRaces & me->GetRaceMask()))
+            continue;
+
+        // No gear of the other faction, whatever its source (vendor, quest, ...) is
+        if (pProto->SourceTeams &&
+           !(pProto->SourceTeams & (me->GetTeam() == ALLIANCE ? GEAR_SOURCE_TEAM_ALLIANCE : GEAR_SOURCE_TEAM_HORDE)))
             continue;
 
         if (pProto->SourceQuestClasses && !(pProto->SourceQuestClasses & me->GetClassMask()))
@@ -2643,13 +2823,24 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
         if ((pProto->ItemLevel + sWorld.getConfig(CONFIG_UINT32_PARTY_BOT_RANDOM_GEAR_LEVEL_DIFFERENCE)) < me->GetLevel())
             continue;
 
-        if (me->CanUseItem(pProto, onlyPvE) != EQUIP_ERR_OK)
-            continue;
+        // The gear that a player can only get by picking it up is the reward of a content that a bot does not
+        // reach: no epic of that kind at all, and the rare ones (ITEM_QUALITY_RARE, the blue gear) that the
+        // quests and the instances drop must not be gear made for a level higher than the level of the bot, which
+        // would make the game too easy for it. The gear that is bound when it is equipped is limited by the level
+        // that it requires, which CanUseItem below checks.
+        if (pProto->Bonding == BIND_WHEN_PICKED_UP)
+        {
+            if (pProto->Quality >= ITEM_QUALITY_EPIC)
+                continue;
 
-        if (pProto->RequiredHonorRank > honorRank)
-            continue;
+            if (pProto->Quality == ITEM_QUALITY_RARE &&
+               (pProto->SourceKinds & (GEAR_SOURCE_QUEST_REWARD | GEAR_SOURCE_INSTANCE_LOOT)) &&
+               pProto->ItemLevel > me->GetLevel())
+                continue;
+        }
 
-        if (pProto->RequiredReputationFaction && uint32(me->GetReputationRank(pProto->RequiredReputationFaction)) < pProto->RequiredReputationRank)
+        // The class, the race, the level, the trade skills and the spells that the item requires
+        if (me->CanUseItem(pProto, true) != EQUIP_ERR_OK)
             continue;
 
         if (uint32 skill = pProto->GetProficiencySkill())
@@ -2670,120 +2861,152 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
         }
 
         uint8 slots[4];
-        pProto->GetAllowedEquipSlots(slots, me->GetClass(), me->CanDualWield());
+        pProto->GetAllowedEquipSlots(slots, me->GetClass(), canDualWield);
 
+        bool evaluated = false;
+        BotGearCandidate candidate;
         for (uint8 slot : slots)
         {
-            if (slot >= EQUIPMENT_SLOT_START && slot < EQUIPMENT_SLOT_END &&
-                !me->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            if (slot < EQUIPMENT_SLOT_START || slot >= EQUIPMENT_SLOT_END)
+                continue;
+
+            if (me->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                continue;
+
+            if (!evaluated)
             {
-                // Offhand checks
-                if (slot == EQUIPMENT_SLOT_OFFHAND)
-                {
-                    // Only allow shield in offhand for tanks
-                    if (pProto->InventoryType != INVTYPE_SHIELD &&
-                        m_role == ROLE_TANK && IsShieldClass(me->GetClass()))
-                        continue;
-
-                    // Only equip holdables on mana users
-                    if (pProto->InventoryType == INVTYPE_HOLDABLE &&
-                        m_role != ROLE_HEALER && m_role != ROLE_RANGE_DPS)
-                        continue;
-                }
-
-                itemsPerSlot[slot].push_back(pProto);
-
-                // Unique item
-                if (pProto->MaxCount == 1)
-                    break;
+                evaluated = true;
+                candidate.proto = pProto;
+                EvaluateBotGearItem(me, pProto, spec, candidate.value);
+                candidate.weaponDamage = GetItemWeaponDamagePerSecond(pProto);
             }
+
+            candidatesPerSlot[slot].push_back(candidate);
         }
     }
 
-    // 1. Remove items that don't have our primary stat from the list
-    // 2. Remove non-pvp items if we have a pvp item available
-    uint32 const primaryStat = GetPrimaryItemStatForClassAndRole(me->GetClass(), m_role);
-    for (auto& itr : itemsPerSlot)
+    std::set<uint32> wornEntries;
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        if (Item* pWorn = me->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            wornEntries.insert(pWorn->GetEntry());
+
+    // The weapon slots, because which weapon is worn in one hand depends on what is worn in the other
+    BotGearCandidate const* mainHandItem = nullptr;
+    BotGearCandidate const* offHandItem = nullptr;
+
+    // A bot that already wears a two handed weapon has no place for anything in its other hand
+    Item* wornMainHand = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    bool const twoHandedWorn = wornMainHand && wornMainHand->GetProto() &&
+        wornMainHand->GetProto()->InventoryType == INVTYPE_2HWEAPON;
+
+    std::vector<BotGearCandidate> const& mainHandCandidates = candidatesPerSlot[EQUIPMENT_SLOT_MAINHAND];
+    std::vector<BotGearCandidate> const& offHandCandidates = candidatesPerSlot[EQUIPMENT_SLOT_OFFHAND];
+
+    switch (twoHandedWorn ? GEAR_WEAPON_POLICY_NONE : weaponRules.policy)
     {
-        bool hasPrimaryStatItem = false;
+        case GEAR_WEAPON_POLICY_TWO_HANDED:
+            mainHandItem = SelectGearCandidate(mainHandCandidates,
+                weaponRules.byWeaponDamage ? GEAR_KEY_WEAPON_DAMAGE : GEAR_KEY_SCORE, wornEntries,
+                IsTwoHandedWeapon);
+            break;
 
-        for (auto const& pItem : itr.second)
-        {
-            for (auto const& stat : pItem->ItemStat)
-            {
-                if (stat.ItemStatType == primaryStat && stat.ItemStatValue > 0)
-                {
-                    hasPrimaryStatItem = true;
-                    break;
-                }
-            }
+        case GEAR_WEAPON_POLICY_DUAL_WIELD:
+            mainHandItem = SelectGearCandidate(mainHandCandidates, GEAR_KEY_WEAPON_DAMAGE, wornEntries,
+                IsOneHandedWeapon);
+            if (mainHandItem)
+                wornEntries.insert(mainHandItem->proto->ItemId);
+            offHandItem = SelectGearCandidate(offHandCandidates, GEAR_KEY_WEAPON_DAMAGE, wornEntries,
+                IsOffHandWeapon);
+            break;
 
-            if (hasPrimaryStatItem)
-                break;
-        }
+        case GEAR_WEAPON_POLICY_ONE_HANDED_SHIELD:
+            mainHandItem = SelectGearCandidate(mainHandCandidates, GEAR_KEY_WEAPON_DAMAGE, wornEntries,
+                IsOneHandedWeapon);
+            if (mainHandItem)
+                wornEntries.insert(mainHandItem->proto->ItemId);
+            offHandItem = SelectGearCandidate(offHandCandidates, GEAR_KEY_ARMOR, wornEntries, IsShield);
+            break;
 
-        if (hasPrimaryStatItem)
-        {
-            itr.second.erase(std::remove_if(itr.second.begin(), itr.second.end(),
-            [primaryStat](ItemPrototype const* & pItem)
-            {
-                bool itemHasPrimaryStat = false;
-                for (auto const& stat : pItem->ItemStat)
-                {
-                    if (stat.ItemStatType == primaryStat && stat.ItemStatValue > 0)
-                    {
-                        itemHasPrimaryStat = true;
-                        break;
-                    }
-                }
+        case GEAR_WEAPON_POLICY_ONE_HANDED_OFFHAND:
+            mainHandItem = SelectGearCandidate(mainHandCandidates, GEAR_KEY_SCORE, wornEntries, IsOneHandedWeapon);
+            if (mainHandItem)
+                wornEntries.insert(mainHandItem->proto->ItemId);
+            offHandItem = SelectGearCandidate(offHandCandidates, GEAR_KEY_SCORE, wornEntries, IsAnyOffHandItem);
+            break;
 
-                return !itemHasPrimaryStat;
-            }),
-                itr.second.end());
-        }
+        case GEAR_WEAPON_POLICY_ONE_HANDED:
+            mainHandItem = SelectGearCandidate(mainHandCandidates,
+                weaponRules.byWeaponDamage ? GEAR_KEY_WEAPON_DAMAGE : GEAR_KEY_SCORE, wornEntries,
+                IsOneHandedWeapon);
+            break;
 
-        bool hasPvpItem = false;
+        case GEAR_WEAPON_POLICY_TWO_HANDED_OR_ONE_HANDED_OFFHAND:
+            SelectWeaponPairByScore(mainHandCandidates, offHandCandidates, wornEntries, mainHandItem, offHandItem,
+                IsOneHandedWeapon, IsAnyOffHandItem);
+            break;
 
-        for (auto const& pItem : itr.second)
-        {
-            if (pItem->RequiredHonorRank)
-            {
-                hasPvpItem = true;
-                break;
-            }
-        }
+        case GEAR_WEAPON_POLICY_TWO_HANDED_OR_TWO_ONE_HANDED:
+            // The other hand of a hunter takes a weapon, nothing else
+            SelectWeaponPairByScore(mainHandCandidates, offHandCandidates, wornEntries, mainHandItem, offHandItem,
+                IsOneHandedWeapon, IsOffHandWeapon);
+            break;
 
-        if (hasPvpItem)
-        {
-            itr.second.erase(std::remove_if(itr.second.begin(), itr.second.end(),
-                [](ItemPrototype const* & pItem)
-            {
-                return pItem->RequiredHonorRank == 0;
-            }),
-                itr.second.end());
-        }
+        case GEAR_WEAPON_POLICY_NONE:
+        default:
+            break;
     }
 
-    for (auto const& itr : itemsPerSlot)
+    if (mainHandItem)
+        wornEntries.insert(mainHandItem->proto->ItemId);
+    if (offHandItem)
+        wornEntries.insert(offHandItem->proto->ItemId);
+
+    // The other slots, rated by the attributes that the item of each one gives
+    for (auto& itr : candidatesPerSlot)
     {
-        // Don't equip offhand if using 2 handed weapon
-        if (itr.first == EQUIPMENT_SLOT_OFFHAND)
+        if (itr.first == EQUIPMENT_SLOT_MAINHAND || itr.first == EQUIPMENT_SLOT_OFFHAND)
+            continue;
+
+        GearCandidateKey key = GEAR_KEY_SCORE;
+        bool (*allowed)(ItemPrototype const*) = IsAnyGear;
+
+        if (itr.first == EQUIPMENT_SLOT_RANGED)
         {
-            if (Item* pMainHandItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
-                if (pMainHandItem->GetProto()->InventoryType == INVTYPE_2HWEAPON)
+            // A hunter wears a bow, a gun or a crossbow, the others only a wand for its attributes
+            if (weaponRules.rangedWeapon)
+            {
+                key = GEAR_KEY_WEAPON_DAMAGE;
+                allowed = IsRangedWeapon;
+            }
+            else
+            {
+                if (!(me->GetClassMask() & CLASSMASK_WAND_USERS))
                     continue;
+
+                allowed = IsWand;
+            }
         }
 
-        if (itr.second.empty())
+        BotGearCandidate const* chosen = SelectGearCandidate(itr.second, key, wornEntries, allowed);
+        if (!chosen)
             continue;
 
-        ItemPrototype const* pProto = SelectRandomContainerElement(itr.second);
-        if (!pProto)
-            continue;
-
-        me->SatisfyItemRequirements(pProto);
-        me->StoreNewItemInBestSlots(pProto->ItemId, 1);
+        wornEntries.insert(chosen->proto->ItemId);
+        me->StoreNewItemInSlot(uint8(itr.first), chosen->proto->ItemId, chosen->value.randomPropertyId);
     }
+
+    // The weapons are equipped after the armour and before the offhand, which can not be worn with two hands
+    if (mainHandItem)
+        me->StoreNewItemInSlot(EQUIPMENT_SLOT_MAINHAND, mainHandItem->proto->ItemId,
+            mainHandItem->value.randomPropertyId);
+    if (offHandItem)
+        me->StoreNewItemInSlot(EQUIPMENT_SLOT_OFFHAND, offHandItem->proto->ItemId,
+            offHandItem->value.randomPropertyId);
+}
+
+void CombatBotBaseAI::PrintGearItemScore(ChatHandler& handler, uint32 itemEntry)
+{
+    SendBotGearItemScore(me, handler, GetBotGearSpec(me, m_role), itemEntry);
 }
 
 void CombatBotBaseAI::AutoEquipGear(uint32 option)

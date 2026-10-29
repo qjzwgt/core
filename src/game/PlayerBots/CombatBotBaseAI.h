@@ -71,6 +71,8 @@ struct HealAuraCompare
     }
 };
 
+class ChatHandler;
+
 class CombatBotBaseAI : public PlayerBotAI
 {
 public:
@@ -93,6 +95,10 @@ public:
     void AddAllSpellReagents();
     void SummonPetIfNeeded();
     void LearnArmorProficiencies();
+    // The dual wield that the trainers teach, needed to know which weapons a bot can wear before dressing it
+    bool PrepareDualWield();
+    // The attributes and the score that one item would give to this bot, to rate the values of the weights
+    void PrintGearItemScore(ChatHandler& handler, uint32 itemEntry);
     void LearnPremadeSpecForClass();
     void EquipPremadeGearTemplate();
     void EquipRandomGearInEmptySlots();

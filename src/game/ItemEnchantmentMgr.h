@@ -24,6 +24,11 @@
 
 #include "Common.h"
 
+#include <vector>
+
 void LoadRandomEnchantmentsTable();
 uint32 GetItemEnchantMod(uint32 entry);
+// All the random properties that the group used by the RandomProperty field of an item can use, not only the one
+// that GetItemEnchantMod selects among them (used to rate the properties of an item before creating it)
+std::vector<uint32> GetItemEnchantMods(uint32 entry);
 #endif
