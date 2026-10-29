@@ -105,6 +105,38 @@ namespace
         "block %",
     };
 
+    // The talents a bot can be summoned with by the pinyin of the Chinese name of each talent. The rating reads the
+    // talent back from the tree that the bot learns and from its role, so an entry only has to name the class to
+    // create, the role to give it, and the talent page that teaches it; MAX_GEAR_SPEC_TABS leaves the tree to the
+    // class, which is right for the classes that are rated by one talent (hunter, mage, warlock).
+    BotGearSpecAlias const gearSpecAliases[] =
+    {
+        // 武器战, 狂暴战, 防战
+        { "wqz", CLASS_WARRIOR, ROLE_MELEE_DPS, 0,               TEAM_CROSSFACTION },
+        { "kbz", CLASS_WARRIOR, ROLE_MELEE_DPS, 1,               TEAM_CROSSFACTION },
+        { "fz",  CLASS_WARRIOR, ROLE_TANK,      2,               TEAM_CROSSFACTION },
+        // 神圣骑士, 防骑, 惩戒骑; paladins are Alliance only
+        { "nq",  CLASS_PALADIN, ROLE_HEALER,    0,               ALLIANCE },
+        { "fq",  CLASS_PALADIN, ROLE_TANK,      1,               ALLIANCE },
+        { "cjq", CLASS_PALADIN, ROLE_MELEE_DPS, 2,               ALLIANCE },
+        // 治疗牧师, 暗牧
+        { "ms",  CLASS_PRIEST,  ROLE_HEALER,    1,               TEAM_CROSSFACTION },
+        { "am",  CLASS_PRIEST,  ROLE_RANGE_DPS, 2,               TEAM_CROSSFACTION },
+        // 元素萨, 增强萨, 恢复萨; shamans are Horde only
+        { "yss", CLASS_SHAMAN,  ROLE_RANGE_DPS, 0,               HORDE },
+        { "zqs", CLASS_SHAMAN,  ROLE_MELEE_DPS, 1,               HORDE },
+        { "ns",  CLASS_SHAMAN,  ROLE_HEALER,    2,               HORDE },
+        // 平衡德, 野德 (the cat), 奶德. The feral page 1 is read as the cat by ROLE_MELEE_DPS and as the bear by
+        // ROLE_TANK, so 熊德 would only need an entry with the role of a tank.
+        { "phd", CLASS_DRUID,   ROLE_RANGE_DPS, 0,               TEAM_CROSSFACTION },
+        { "yd",  CLASS_DRUID,   ROLE_MELEE_DPS, 1,               TEAM_CROSSFACTION },
+        { "nd",  CLASS_DRUID,   ROLE_HEALER,    2,               TEAM_CROSSFACTION },
+        // 法师, 术士, 猎人; rated by one talent, so no tree is asked for
+        { "fs",  CLASS_MAGE,    ROLE_RANGE_DPS, MAX_GEAR_SPEC_TABS, TEAM_CROSSFACTION },
+        { "ss",  CLASS_WARLOCK, ROLE_RANGE_DPS, MAX_GEAR_SPEC_TABS, TEAM_CROSSFACTION },
+        { "lr",  CLASS_HUNTER,  ROLE_RANGE_DPS, MAX_GEAR_SPEC_TABS, TEAM_CROSSFACTION },
+    };
+
     // The attributes that are a percentage are stored in hundredths of percent
     constexpr float AURA_PERCENT_FACTOR = 0.01f;
 
@@ -461,6 +493,48 @@ BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role)
     }
 
     return GEAR_SPEC_NONE;
+}
+
+BotGearSpecAlias const* GetBotGearSpecAlias(char const* alias, Team team)
+{
+    if (!alias || !*alias)
+        return nullptr;
+
+    for (auto const& entry : gearSpecAliases)
+    {
+        if (strcmp(alias, entry.alias) != 0)
+            continue;
+
+        // A paladin or a shaman of the other faction could not be given a race, so the abbreviation of its talent is
+        // not offered; the caller answers as it does for an unknown argument.
+        if (entry.team != TEAM_CROSSFACTION && entry.team != team)
+            return nullptr;
+
+        return &entry;
+    }
+
+    return nullptr;
+}
+
+bool GetClassTalentTab(uint8 botClass, uint8 tabpage, uint32& talentTab)
+{
+    if (!botClass || tabpage >= MAX_GEAR_SPEC_TABS)
+        return false;
+
+    // the same class mask as Unit::GetClassMask()
+    uint32 const classMask = 1 << (botClass - 1);
+
+    for (uint32 tab = 0; tab < sTalentTabStore.GetNumRows(); ++tab)
+    {
+        TalentTabEntry const* tabInfo = sTalentTabStore.LookupEntry(tab);
+        if (!tabInfo || (tabInfo->ClassMask & classMask) == 0 || tabInfo->tabpage != tabpage)
+            continue;
+
+        talentTab = tab;
+        return true;
+    }
+
+    return false;
 }
 
 // How the weapon slots of each talent are dressed, as a player of that talent dresses them

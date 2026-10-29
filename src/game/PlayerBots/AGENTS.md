@@ -64,10 +64,13 @@ Trinkets (bots wear none), on use and combat procs, set bonuses, the enchantment
 created new), defense rating, weapon skills.
 
 ## Known rough edges, on purpose
-- `AutoAssignRole()` can not tell arms from fury, elemental from enhancement from restoration, or cat from bear,
-  and `LearnRandomTalents()` fills a whole tree in row order, so a signature spell may not be learned. The rating
-  only reads the talents that exist; the plan is to give each new bot an intended, level appropriate talent tree
-  instead of rewriting the learning or the roles.
+- `.partybot add <abbreviation>` says which tree a new bot learns: the class, the role and the talent page come from
+  `gearSpecAliases` in `BotGearScoring.cpp`, and `LearnPremadeSpecForClass()` fills that page with
+  `LearnTalentsInTab()` instead of applying a premade template, which is chosen by role and not by talent. The rating
+  is not told about the asked talent: it reads the tree that was learned and the role back, which is also what tells
+  the cat from the bear on the feral page of a druid. The tree is still filled in row order, so a signature spell can
+  be missing, and `AutoAssignRole()` still can not tell arms from fury or elemental from restoration when the bot was
+  not summoned with an abbreviation.
 - `Player::CanDualWield()` reads `m_canDualWield`, which is false after construction and is never set anywhere
   else, and `SKILL_DUAL_WIELD` has no grant path. Spell 674 is taught directly for that reason; a bot loaded from
   the database would otherwise lose the second weapon.
@@ -78,5 +81,8 @@ created new), defense rating, weapon skills.
 - The handlers live in `PlayerBotMgr.cpp`; the sub command tables of `.partybot` and `.bot` are in
   `src/game/Chat/Chat.cpp`, which is a CRLF file. Add new commands to those tables with the existing aligned
   column layout and keep the CRLF endings.
+- The talents that a bot can be summoned with are arguments of `.partybot add` and not sub commands of
+  `src/game/Chat/Chat.cpp`: the list is `gearSpecAliases` in `BotGearScoring.cpp` and what every page means is in
+  `BotGearScoring.md`. A new talent is a row in that list, with nothing to change in the command tables.
 - Everything that reads a table of this subsystem is reached from `PlayerBotMgr::Load()`, which `.bot reload`
   calls again.

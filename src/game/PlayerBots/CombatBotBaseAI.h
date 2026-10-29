@@ -4,6 +4,7 @@
 #include "PlayerBotAI.h"
 #include "SpellEntry.h"
 #include "Player.h"
+#include "BotGearScoring.h"
 
 struct HealSpellCompare
 {
@@ -104,6 +105,11 @@ public:
     void EquipRandomGearInEmptySlots();
     void AutoEquipGear(uint32 option);
     void LearnRandomTalents();
+    // The talents of one talent tab, in the order the talents are listed in the tree
+    void LearnTalentsInTab(uint32 talentTab, bool randomOrder);
+    // The talent page that `.partybot add <abbreviation>` asked for, filled with LearnTalentsInTab instead of a
+    // premade template; MAX_GEAR_SPEC_TABS when the bot was summoned without an asked talent
+    void SetRequestedTalentPage(uint8 tabpage) { m_requestedTalentPage = tabpage; }
     
     uint8 GetAttackersInRangeCount(float range) const;
     Unit* SelectAttackerDifferentFrom(Unit const* pExcept) const;
@@ -566,6 +572,7 @@ public:
     bool m_receivedBgInvite = false;
     uint8 m_visualHonorRank = 0;
     CombatBotRoles m_role = ROLE_INVALID;
+    uint8 m_requestedTalentPage = MAX_GEAR_SPEC_TABS;
 };
 
 #endif

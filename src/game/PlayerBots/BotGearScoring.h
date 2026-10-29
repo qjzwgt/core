@@ -84,6 +84,22 @@ struct BotGearWeaponRules
     bool rangedWeapon = false;                        // the ranged slot holds a weapon, not a wand
 };
 
+// The number of talent pages a class has (TalentTabEntry.tabpage), also used as "no talent page was asked for"
+enum { MAX_GEAR_SPEC_TABS = 3 };
+
+// A talent that a bot can be summoned with (`.partybot add <abbreviation>`). The rating reads the talent back from
+// the tree that the bot learns and from its role (see GetBotGearSpec), so an entry only says which class to create,
+// which role to give it, and which talent page of that class to fill; MAX_GEAR_SPEC_TABS as the page leaves the
+// choice of the tree to the class, which is right for the classes rated by one talent (hunter, mage, warlock).
+struct BotGearSpecAlias
+{
+    char const* alias;
+    uint8 botClass;
+    CombatBotRoles role;
+    uint8 talentTabPage;
+    Team team;                                        // TEAM_CROSSFACTION when both factions may summon it
+};
+
 // All that one item gives to a bot of one talent: the attributes of the item, the attributes of the spells that
 // the item casts while it is equipped, and the best of the random properties that the item can use.
 struct BotGearItemValue
@@ -97,6 +113,12 @@ struct BotGearItemValue
 BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role);
 // How the weapon slots of a bot of that talent must be filled
 BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec);
+
+// The talent asked by an abbreviation of `.partybot add`, nullptr when the argument is not one or when it belongs
+// to the other faction than `team`
+BotGearSpecAlias const* GetBotGearSpecAlias(char const* alias, Team team);
+// The id of the talent tab of one page of a class (TalentTabEntry.tabpage), false when the class has no such page
+bool GetClassTalentTab(uint8 botClass, uint8 tabpage, uint32& talentTab);
 
 // The value of one attribute for one talent: the compiled defaults, overridden by `playerbot_gear_stat_weights`
 float GetBotGearStatWeight(BotGearSpec spec, BotGearStat stat);

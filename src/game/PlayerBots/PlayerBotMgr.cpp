@@ -885,11 +885,21 @@ bool ChatHandler::HandlePartyBotAddCommand(char* args)
     uint8 botClass = 0;
     uint32 botLevel = pPlayer->GetLevel();
     CombatBotRoles botRole = ROLE_INVALID;
+    // The talent asked by an abbreviation of a bot; MAX_GEAR_SPEC_TABS when the argument was a class or a role,
+    // which keeps the current behaviour of learning a premade build.
+    uint8 requestedTalentPage = MAX_GEAR_SPEC_TABS;
 
     if (char* arg1 = ExtractArg(&args))
     {
         std::string option = arg1;
-        if (option == "warrior")
+        // The abbreviations of the talents say the class, the role and the tree to learn, so they are read first.
+        if (BotGearSpecAlias const* alias = GetBotGearSpecAlias(option.c_str(), pPlayer->GetTeam()))
+        {
+            botClass = alias->botClass;
+            botRole = alias->role;
+            requestedTalentPage = alias->talentTabPage;
+        }
+        else if (option == "warrior")
             botClass = CLASS_WARRIOR;
         else if (option == "paladin" && pPlayer->GetTeam() == ALLIANCE)
             botClass = CLASS_PALADIN;
@@ -952,6 +962,7 @@ bool ChatHandler::HandlePartyBotAddCommand(char* args)
     pPlayer->GetNearPoint(pPlayer, x, y, z, 0, 5.0f, frand(0.0f, 6.0f));
 
     PartyBotAI* ai = new PartyBotAI(pPlayer, nullptr, botRole, botRace, botClass, botLevel, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(), x, y, z, pPlayer->GetOrientation());
+    ai->SetRequestedTalentPage(requestedTalentPage);
     if (sPlayerBotMgr.AddBot(ai))
         SendSysMessage("New party bot added.");
     else

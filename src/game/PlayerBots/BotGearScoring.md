@@ -13,7 +13,33 @@ decisions about which slots to fill and which item wins.
 `GetBotGearSpec()` reads which talent tab the bot has learned spells in (`TalentEntry` + `TalentTabEntry.tabpage`),
 which is reliable because a bot learns its talents in one tab. When it has learned none, the role of the bot
 (`AutoAssignRole()`) decides. The role and the learning of the talents are not changed by this code; a bot that is
-given an intended talent tree in the future is rated correctly without touching anything here.
+given an intended talent tree, which `.partybot add <abbreviation>` does, is rated correctly without touching
+anything here.
+
+## Summoning a bot of a chosen talent
+
+`.partybot add <abbreviation> [level]` creates a bot of one talent: the abbreviation says the class, the role, and
+the talent page to learn (`gearSpecAliases` in `BotGearScoring.cpp`, matched by `GetBotGearSpecAlias()`).
+`CombatBotBaseAI::LearnPremadeSpecForClass()` learns that tree with `LearnTalentsInTab()` instead of looking for a
+premade template - those are chosen by role and not by talent - and then learns the spells of the trainers and of the
+items, as it does when there is no template. Nothing else is needed for the gear: the rating reads the talent back
+from the tree the bot has and from its role, which is also what tells the cat from the bear on the feral page of the
+druid.
+
+| Abbreviation | Talent | Page of the class |
+| --- | --- | --- |
+| `wqz` `kbz` `fz` | 武器战, 狂暴战, 防战 | arms 0, fury 1, protection 2 |
+| `nq` `fq` `cjq` | 神圣骑士, 防骑, 惩戒骑 (Alliance) | holy 0, protection 1, retribution 2 |
+| `ms` `am` | 治疗牧师, 暗牧 | holy 1, shadow 2 |
+| `yss` `zqs` `ns` | 元素萨, 增强萨, 恢复萨 (Horde) | elemental 0, enhancement 1, restoration 2 |
+| `phd` `yd` `nd` | 平衡德, 野德, 奶德 | balance 0, feral 1, restoration 2 |
+| `fs` `ss` `lr` | 法师, 术士, 猎人 | none, the class is rated by one talent |
+
+The classes of the last row are rated by one talent (`GEAR_SPEC_MAGE`, `GEAR_SPEC_WARLOCK`, `GEAR_SPEC_HUNTER`), so
+no tree is asked for and the bot takes a premade build of its role as before. `yd` is the cat: a bear is the same
+page with `ROLE_TANK`, and 熊德, 戒律牧师 and the three rogue talents have no abbreviation yet. The tree itself is
+filled in the order the tree lists its talents, so a signature spell can still be missing; the points that the level
+of the bot pays for are the only limit.
 
 ## The pool of items
 

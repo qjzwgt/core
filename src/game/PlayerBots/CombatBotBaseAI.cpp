@@ -2407,6 +2407,25 @@ void CombatBotBaseAI::LearnArmorProficiencies()
 
 void CombatBotBaseAI::LearnPremadeSpecForClass()
 {
+    // The talent that `.partybot add <abbreviation>` asked for is learned as it is asked, without looking for a
+    // premade template: those are chosen by role and not by talent, and the gear is rated for the talents the bot
+    // has, so learning the tree is also what dresses the bot with the gear of that talent. The role was set when the
+    // bot was created, which tells apart the two talents that share a tree (the cat and the bear of a druid).
+    if (m_requestedTalentPage < MAX_GEAR_SPEC_TABS)
+    {
+        uint32 talentTab = 0;
+        if (GetClassTalentTab(me->GetClass(), m_requestedTalentPage, talentTab))
+        {
+            LearnTalentsInTab(talentTab, false);
+            // The spells of the trainers and of the items come after the talents, as in the fallback below.
+            char trainerArgs[] = "";
+            char itemArgs[] = "";
+            ChatHandler(me).HandleLearnAllTrainerCommand(trainerArgs);
+            ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
+            return;
+        }
+    }
+
     std::vector<PlayerPremadeSpecTemplate const*> vSpecs;
     for (const auto& itr : sObjectMgr.GetPlayerPremadeSpecTemplates())
     {
@@ -2459,9 +2478,6 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
 
 void CombatBotBaseAI::LearnRandomTalents()
 {
-    if (!me->GetFreeTalentPoints())
-        return;
-
     std::vector<uint32> talentTabsForClass;
     for (uint32 talentTab = 0; talentTab < sTalentTabStore.GetNumRows(); ++talentTab)
     {
@@ -2478,7 +2494,13 @@ void CombatBotBaseAI::LearnRandomTalents()
     if (talentTabsForClass.empty())
         return;
 
-    uint32 chosenTab = SelectRandomContainerElement(talentTabsForClass);
+    LearnTalentsInTab(SelectRandomContainerElement(talentTabsForClass), true);
+}
+
+void CombatBotBaseAI::LearnTalentsInTab(uint32 talentTab, bool randomOrder)
+{
+    if (!me->GetFreeTalentPoints())
+        return;
 
     std::map<uint32 /*row*/, std::vector<std::pair<uint32 /*talent id*/, uint32 /*ranks*/>>> possibleTalents;
     for (uint32 talentId = 0; talentId < sTalentStore.GetNumRows(); ++talentId)
@@ -2487,7 +2509,7 @@ void CombatBotBaseAI::LearnRandomTalents()
         if (!talentInfo)
             continue;
 
-        if (talentInfo->TalentTab != chosenTab)
+        if (talentInfo->TalentTab != talentTab)
             continue;
 
         uint32 ranks;
@@ -2501,7 +2523,11 @@ void CombatBotBaseAI::LearnRandomTalents()
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
     for (auto& itrRow : possibleTalents)
     {
-        std::shuffle(itrRow.second.begin(), itrRow.second.end(), std::default_random_engine(seed));
+        // The talents of an asked tree are taken in the order the tree lists them, so that two bots of the same
+        // talent are dressed and rated the same way.
+        if (randomOrder)
+            std::shuffle(itrRow.second.begin(), itrRow.second.end(), std::default_random_engine(seed));
+
         for (auto const& itrTalent: itrRow.second)
         {
             for (uint32 rank = 0; rank < itrTalent.second; ++rank)
