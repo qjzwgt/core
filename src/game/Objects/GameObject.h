@@ -187,6 +187,7 @@ class GameObject : public SpellCaster
         void RemoveUniqueUse(Player const* player);
         bool HasUniqueUser(Player const* player);
         uint32 GetUniqueUseCount();
+        uint32 GetRequiredParticipantCount() const;
 
         void AddUse() { ++m_useTimes; }
         uint32 GetUseCount() const { return m_useTimes; }

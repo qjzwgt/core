@@ -736,6 +736,19 @@ void GameObject::Refresh()
         GetMap()->Add(this);
 }
 
+uint32 GameObject::GetRequiredParticipantCount() const
+{
+    GameObjectInfo const* info = GetGOInfo();
+    if (!info || info->type != GAMEOBJECT_TYPE_SUMMONING_RITUAL)
+        return 0;
+
+    // allow completing the ritual without additional participants
+    if (sWorld.getConfig(CONFIG_BOOL_SUMMONING_RITUAL_SINGLE_PARTICIPANT))
+        return 1;
+
+    return info->summoningRitual.reqParticipants;
+}
+
 void GameObject::AddUniqueUse(Player* player)
 {
     std::unique_lock<std::shared_timed_mutex> guard(m_UniqueUsers_lock);
@@ -785,7 +798,7 @@ void GameObject::RemoveUniqueUse(Player const* player)
         if (player->GetObjectGuid() == GetOwnerGuid() ||
             // too many helpers cancelled while it's activated
             (GetGoState() == GO_STATE_ACTIVE &&
-            m_UniqueUsers.size() < info->summoningRitual.reqParticipants))
+            m_UniqueUsers.size() < GetRequiredParticipantCount()))
         {
             if (!info->summoningRitual.ritualPersistent)
             {
@@ -1737,6 +1750,7 @@ void GameObject::Use(Unit* user)
 
             Player* player = (Player*)user;
             GameObjectInfo const* info = GetGOInfo();
+            uint32 const requiredParticipants = GetRequiredParticipantCount();
 
             if (Unit* owner = GetOwner())
             {
@@ -1744,7 +1758,13 @@ void GameObject::Use(Unit* user)
                     return;
 
                 // accept only use by player from same group as owner, excluding owner itself (unique use already added in spell effect)
-                if (player == (Player*)owner || (info->summoningRitual.castersGrouped && !player->IsInSameRaidWith(((Player*)owner))))
+                // when a single participant is enough the owner can trigger the ritual itself
+                if (player == (Player*)owner)
+                {
+                    if (requiredParticipants > 1)
+                        return;
+                }
+                else if (info->summoningRitual.castersGrouped && !player->IsInSameRaidWith(((Player*)owner)))
                     return;
 
                 // expect owner to already be channeling, so if not...
@@ -1773,7 +1793,7 @@ void GameObject::Use(Unit* user)
             AddUniqueUse(player);
 
             // full amount unique participants including original summoner, need more
-            if (GetUniqueUseCount() < info->summoningRitual.reqParticipants ||
+            if (GetUniqueUseCount() < requiredParticipants ||
                 !info->summoningRitual.spellId ||
                 GetGoState() == GO_STATE_ACTIVE) // spell already sent
                 return;

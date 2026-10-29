@@ -1521,6 +1521,15 @@ AllowTwoSide.AddFriend = 0
 #        in game from other side
 #        Default: 100
 #
+#    SummoningRitual.SingleParticipant
+#        Summoning ritual gameobjects (the objects several players must click and keep the click
+#        pressed to trigger an event, like the altars in Uldaman and Blackrock Spire or the
+#        circles created by the warlock rituals) only require one participant to trigger that event.
+#        The player that created such an object with a spell can complete it alone too.
+#        Participants still must keep the click pressed while the triggered spell is running.
+#        Default: 0 (use the participant amount from gameobject_template data0)
+#                 1 (one player is enough)
+#
 ###################################################################################################################
 
 ThreatRadius = 50
@@ -1561,6 +1570,7 @@ ListenRange.TextEmote = 40
 ListenRange.Yell = 300
 GuidReserveSize.Creature = 1000
 GuidReserveSize.GameObject = 1000
+SummoningRitual.SingleParticipant = 0
 
 
 ###################################################################################################################

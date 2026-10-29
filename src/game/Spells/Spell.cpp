@@ -4065,7 +4065,7 @@ void Spell::update(uint32 difftime)
             if (pGo->GetGoType() == GAMEOBJECT_TYPE_SUMMONING_RITUAL &&
                 m_spellInfo->Id == pInfo->summoningRitual.spellId &&
                 // too many helpers cancelled
-                (pGo->GetUniqueUseCount() < pInfo->summoningRitual.reqParticipants ||
+                (pGo->GetUniqueUseCount() < pGo->GetRequiredParticipantCount() ||
                 // the warlock cancelled
                 (!pInfo->summoningRitual.ritualPersistent && !pGo->GetOwner())))
             {

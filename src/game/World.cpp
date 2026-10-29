@@ -1244,6 +1244,8 @@ void World::LoadConfigSettings(bool reload)
 
     setConfig(CONFIG_UINT32_CREATURE_SUMMON_LIMIT, "MaxCreatureSummonLimit", DEFAULT_CREATURE_SUMMON_LIMIT);
 
+    setConfig(CONFIG_BOOL_SUMMONING_RITUAL_SINGLE_PARTICIPANT, "SummoningRitual.SingleParticipant", false);
+
     // Smartlog data
     sLog.InitSmartlogEntries(sConfig.GetStringDefault("Smartlog.ExtraEntries", ""));
     sLog.InitSmartlogGuids(sConfig.GetStringDefault("Smartlog.ExtraGuids", ""));
