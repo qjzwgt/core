@@ -173,9 +173,19 @@ hunter has no choice but a two handed melee weapon.
 
 The `RandomProperty` field of an item is a group of `item_enchantment_template`, and the values of the properties of
 the group grow with the level of the item, so the properties are read from the table (`GetItemEnchantMods()`) and
-each of them is scored with the item. The item is created with the property that gives the most to that talent,
-which is what makes a tank take "of the Bear", a caster "of the Eagle", a hunter "of the Monkey" and a melee damage
-dealer "of the Tiger" without naming any of them.
+each of them is scored with the item. The item is created with the property of its group that gives the most to
+that talent, which is what makes a tank take "of the Bear" and a caster "of the Eagle" where the group of the item
+has both.
+
+The item always wears one of its properties; the rating only says which one. When none of them gives an attribute
+that the talent values - the castery suffixes of a plate leg for a warrior, whose weights for intellect and spirit
+are 0 - the property is the one that the creation of the item for a player would roll, with the chances of the
+table. A bot that wore such an item without any suffix wore something that no player has, and the suffix is part of
+what the item is worth.
+
+An entry whose group has no row of `item_enchantment_template` for the patch of the server has no property at all:
+the loading of `item_template` zeroes `RandomProperty` and writes a line that names the entry. That is data for
+`sql/custom/repack/`, not something the rating can fix.
 
 `Player::StoreNewItemInBestSlots()` would roll another property, so the items are created with
 `Player::StoreNewItemInSlot()`, which puts the item in one given slot with the chosen property and applies the mods

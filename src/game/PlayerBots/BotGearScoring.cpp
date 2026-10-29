@@ -713,6 +713,26 @@ void EvaluateBotGearItem(Player* me, ItemPrototype const* proto, BotGearSpec spe
                 bestProperty = int32(randomProp->ID);
             }
         }
+
+        // An item whose entry names a group of random properties always wears one of them: the loop above only
+        // says which one of the group gives the most to the talent. A group whose properties give nothing that
+        // the talent values - the castery suffixes of a plate leg for a warrior - would else leave the item
+        // without its suffix at all, which no copy of that item worn by a player is. So take the property that
+        // the creation of the item for a player would roll, with the chances of `item_enchantment_template`. Only
+        // a group without a row of that table for the patch of the server leaves the item without a property,
+        // and the loading of `item_template` has said so when it set the field to 0.
+        if (!bestProperty && !mods.empty())
+            if (ItemRandomPropertiesEntry const* rolled = sItemRandomPropertiesStore.LookupEntry(
+                    GetItemEnchantMod(proto->RandomProperty)))
+            {
+                bestProperty = int32(rolled->ID);
+
+                // The attributes of that property are part of the item the bot would wear, so they are rated like
+                // the ones of the property that the loop above chose.
+                for (uint32 i = 0; i < 3; ++i)
+                    if (rolled->enchant_id[i])
+                        AddEnchantmentValue(me, rolled->enchant_id[i], best, castSpells);
+            }
     }
 
     value = best;
