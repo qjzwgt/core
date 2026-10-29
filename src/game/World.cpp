@@ -1670,6 +1670,9 @@ void World::SetInitialWorldSettings()
     sObjectMgr.LoadVendorTemplates();                       // must be after load ItemTemplate
     sObjectMgr.LoadVendors();                               // must be after load CreatureTemplate, VendorTemplate, and ItemTemplate
 
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Indexing the sources of items ...");
+    sObjectMgr.LoadItemGearSources();                       // must be after load ItemTemplate, Quests, Conditions, GameEvents, CreatureTemplate and Vendors
+
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Trainers...");
     sObjectMgr.LoadTrainerTemplates();                      // must be after load CreatureTemplate
     sObjectMgr.LoadTrainers();                              // must be after load CreatureTemplate, TrainerTemplate

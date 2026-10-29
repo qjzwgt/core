@@ -918,6 +918,7 @@ class ObjectMgr
         void CorrectItemDisplayIds(uint32, uint32&);
         void LoadItemRequiredTarget();
         void LoadItemLocales();
+        void LoadItemGearSources();
         void LoadQuestLocales();
         void LoadPageTextLocales();
         void LoadGossipMenuItemsLocales();

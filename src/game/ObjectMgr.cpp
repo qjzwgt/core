@@ -56,6 +56,7 @@
 #include "Utilities/Random.h"
 
 #include <limits>
+#include <unordered_set>
 
 INSTANTIATE_SINGLETON_1(ObjectMgr);
 
@@ -10866,6 +10867,343 @@ void ObjectMgr::LoadVendorTemplates()
 
     for (const auto vendor_id : vendor_ids)
         sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Table `npc_vendor_template` has vendor template %u not used by any vendors ", vendor_id);
+}
+
+namespace
+{
+    // Depth limit for the condition trees used by quests and by single vendor items
+    constexpr uint32 MAX_GEAR_SOURCE_CONDITION_DEPTH = 16;
+
+    uint32 GetGearSourceRestrictions(uint32 conditionId, uint32 depth)
+    {
+        if (!conditionId || depth > MAX_GEAR_SOURCE_CONDITION_DEPTH)
+            return 0;
+
+        ConditionEntry const* condition = sConditionStorage.LookupEntry<ConditionEntry>(conditionId);
+        if (!condition)
+            return 0;
+
+        switch (condition->GetType())
+        {
+            case CONDITION_REPUTATION_RANK_MIN:
+            case CONDITION_REPUTATION_RANK_MAX:
+                return GEAR_SOURCE_REPUTATION;
+            case CONDITION_PVP_RANK:
+                return GEAR_SOURCE_PVP;
+            case CONDITION_ACTIVE_GAME_EVENT:
+            case CONDITION_ACTIVE_HOLIDAY:
+                return GEAR_SOURCE_WORLD_EVENT;
+            case CONDITION_AND:
+            case CONDITION_OR:
+                return GetGearSourceRestrictions(condition->GetValue1(), depth + 1) |
+                    GetGearSourceRestrictions(condition->GetValue2(), depth + 1) |
+                    GetGearSourceRestrictions(condition->GetValue3(), depth + 1) |
+                    GetGearSourceRestrictions(condition->GetValue4(), depth + 1);
+            default:
+                break;
+        }
+
+        // A negated condition does not make the content of a source harder to obtain
+        return 0;
+    }
+
+    // Marks the items of the loot ids of one table with one kind of source, and collects the reference ids that
+    // this loot uses, because they are defined in another table (a negative count is a reference)
+    void MarkLootSource(char const* lootTable, std::unordered_set<uint32> const& lootIds, uint32 kind,
+        std::unordered_set<uint32>& referenceIds)
+    {
+        if (lootIds.empty())
+            return;
+
+        std::unique_ptr<QueryResult> result(WorldDatabase.PQuery("SELECT `entry`, `item`, `mincountOrRef` FROM `%s`", lootTable));
+        if (!result)
+            return;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            if (!lootIds.count(fields[0].GetUInt32()))
+                continue;
+
+            int32 const minCountOrRef = fields[2].GetInt32();
+            if (minCountOrRef < 0)
+                referenceIds.insert(uint32(-minCountOrRef));
+            else if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(fields[1].GetUInt32()))
+                proto->SourceKinds |= kind;
+        }
+        while (result->NextRow());
+    }
+
+    // Marks every item that appears in one loot table, used by the tables whose rows all belong to the open world
+    void MarkAllLootTableSource(char const* lootTable, uint32 kind)
+    {
+        std::unique_ptr<QueryResult> result(WorldDatabase.PQuery("SELECT `item` FROM `%s` WHERE `item` > 0", lootTable));
+        if (!result)
+            return;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(fields[0].GetUInt32()))
+                proto->SourceKinds |= kind;
+        }
+        while (result->NextRow());
+    }
+
+    // The loot of a creature or of a game object can use references, and a reference can use other references
+    void FollowLootReferences(std::unordered_set<uint32> referenceIds, uint32 kind)
+    {
+        std::unordered_set<uint32> followed;
+
+        while (!referenceIds.empty())
+        {
+            std::unordered_set<uint32> pending;
+            for (uint32 referenceId : referenceIds)
+                if (followed.insert(referenceId).second)
+                    pending.insert(referenceId);
+
+            std::unordered_set<uint32> found;
+            MarkLootSource("reference_loot_template", pending, kind, found);
+            referenceIds = found;
+        }
+    }
+}
+
+// Indexes how every item can be obtained, so that the gear of bots can be built from the content that normal
+// adventuring gives: reputation, honor rank, pvp reward and world event gear is left out of the random gear
+// pools, the gear of the other faction is left out for the bots that can not obtain it, and the items that are
+// the reward of a quest or the loot of a dungeon or a raid are known to be able to rate them by level, and the
+// gear that the world drops and that the professions make is known to be always reachable for the bots.
+// Must be run after item_template, quests, conditions, game events, creature templates and vendors are loaded.
+void ObjectMgr::LoadItemGearSources()
+{
+    // The requirements of the item itself apply whatever the source of the item is
+    for (auto const& itr : GetItemPrototypeMap())
+    {
+        ItemPrototype const& proto = itr.second;
+
+        proto.SourceRestrictions = 0;
+        proto.SourceTeams = 0;
+        proto.SourceKinds = 0;
+
+        if (proto.RequiredHonorRank || proto.RequiredCityRank)
+            proto.SourceRestrictions |= GEAR_SOURCE_PVP;
+
+        if (proto.RequiredReputationFaction && proto.RequiredReputationRank)
+            proto.SourceRestrictions |= GEAR_SOURCE_REPUTATION;
+    }
+
+    // Quest rewards, the quests of the current patch only (LoadQuests has filtered the other ones already)
+    for (auto const& itr : m_QuestTemplatesMap)
+    {
+        Quest const* qinfo = itr.second.get();
+        if (!qinfo || qinfo->GetQuestMethod() == QUEST_METHOD_DISABLED)
+            continue;
+
+        uint32 restrictions = 0;
+
+        if (qinfo->GetType() == QUEST_TYPE_PVP)
+            restrictions |= GEAR_SOURCE_PVP;
+        else if (qinfo->GetType() == QUEST_TYPE_WORLD_EVENT)
+            restrictions |= GEAR_SOURCE_WORLD_EVENT;
+
+        if (qinfo->GetRequiredMinRepFaction() || qinfo->GetRequiredMaxRepFaction())
+            restrictions |= GEAR_SOURCE_REPUTATION;
+
+        if (sGameEventMgr.IsQuestInGameEvent(qinfo->GetQuestId()))
+            restrictions |= GEAR_SOURCE_WORLD_EVENT;
+
+        restrictions |= GetGearSourceRestrictions(qinfo->GetRequiredCondition(), 0);
+
+        uint32 teams = GEAR_SOURCE_TEAM_ANY;
+        uint32 const requiredRaces = qinfo->GetRequiredRaces();
+
+        if (requiredRaces && !(requiredRaces & RACEMASK_ALLIANCE))
+            teams &= ~GEAR_SOURCE_TEAM_ALLIANCE;
+        if (requiredRaces && !(requiredRaces & RACEMASK_HORDE))
+            teams &= ~GEAR_SOURCE_TEAM_HORDE;
+
+        for (int i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
+        {
+            if (ItemPrototype const* proto = GetItemPrototype(qinfo->RewChoiceItemId[i]))
+            {
+                proto->SourceRestrictions |= restrictions;
+                proto->SourceTeams |= teams;
+                proto->SourceKinds |= GEAR_SOURCE_QUEST_REWARD;
+            }
+        }
+
+        for (int i = 0; i < QUEST_REWARDS_COUNT; ++i)
+        {
+            if (ItemPrototype const* proto = GetItemPrototype(qinfo->RewItemId[i]))
+            {
+                proto->SourceRestrictions |= restrictions;
+                proto->SourceTeams |= teams;
+                proto->SourceKinds |= GEAR_SOURCE_QUEST_REWARD;
+            }
+        }
+    }
+
+    // Items sold by a creature, where the faction of the creature decides which faction can buy them
+    for (auto const& itr : m_CacheVendorItemMap)
+    {
+        uint32 teams = GEAR_SOURCE_TEAM_ANY;
+
+        if (CreatureInfo const* cInfo = GetCreatureTemplate(itr.first))
+        {
+            if (FactionTemplateEntry const* faction = GetFactionTemplateEntry(cInfo->faction))
+            {
+                bool const alliance = (faction->ourMask & FACTION_MASK_ALLIANCE) != 0;
+                bool const horde = (faction->ourMask & FACTION_MASK_HORDE) != 0;
+
+                if (alliance != horde)
+                    teams = alliance ? GEAR_SOURCE_TEAM_ALLIANCE : GEAR_SOURCE_TEAM_HORDE;
+            }
+        }
+
+        VendorItemData const& items = itr.second;
+        for (uint8 i = 0; i < items.GetItemCount(); ++i)
+        {
+            VendorItem const* vItem = items.GetItem(i);
+            if (!vItem)
+                continue;
+
+            if (ItemPrototype const* proto = GetItemPrototype(vItem->item))
+            {
+                proto->SourceTeams |= teams;
+                proto->SourceRestrictions |= GetGearSourceRestrictions(vItem->conditionId, 0);
+            }
+        }
+    }
+
+    // Vendor templates are used by several creatures of unknown faction, so they do not restrict anything
+    for (auto const& itr : m_CacheVendorTemplateItemMap)
+    {
+        VendorItemData const& items = itr.second;
+        for (uint8 i = 0; i < items.GetItemCount(); ++i)
+        {
+            VendorItem const* vItem = items.GetItem(i);
+            if (vItem)
+                if (ItemPrototype const* proto = GetItemPrototype(vItem->item))
+                    proto->SourceTeams |= GEAR_SOURCE_TEAM_ANY;
+        }
+    }
+
+    // Looted, opened, fished and skinned items are not limited to one faction
+    static char const* const lootTables[] =
+    {
+        "creature_loot_template", "disenchant_loot_template", "fishing_loot_template", "gameobject_loot_template",
+        "item_loot_template", "mail_loot_template", "pickpocketing_loot_template", "reference_loot_template",
+        "skinning_loot_template"
+    };
+
+    for (char const* lootTable : lootTables)
+    {
+        std::unique_ptr<QueryResult> result(WorldDatabase.PQuery("SELECT DISTINCT `item` FROM `%s` WHERE `item` > 0", lootTable));
+        if (!result)
+            continue;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            if (ItemPrototype const* proto = GetItemPrototype(fields[0].GetUInt32()))
+                proto->SourceTeams |= GEAR_SOURCE_TEAM_ANY;
+        }
+        while (result->NextRow());
+    }
+
+    // The loot of the creatures and of the game objects that are inside a dungeon or a raid
+    {
+        std::unordered_set<uint32> instanceCreatureLootIds;
+        std::unordered_set<uint32> instanceGameobjectLootIds;
+        std::unordered_set<uint32> worldCreatureLootIds;
+        std::unordered_set<uint32> worldGameobjectLootIds;
+
+        if (std::unique_ptr<QueryResult> result = WorldDatabase.Query("SELECT `map`, `id` FROM `creature`"))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                MapEntry const* mapEntry = sMapStorage.LookupEntry<MapEntry>(fields[0].GetUInt32());
+                bool const inInstance = mapEntry && mapEntry->IsDungeon();
+
+                CreatureInfo const* cInfo = GetCreatureTemplate(fields[1].GetUInt32());
+                if (!cInfo || !cInfo->loot_id)
+                    continue;
+
+                if (inInstance)
+                    instanceCreatureLootIds.insert(cInfo->loot_id);
+                else
+                    worldCreatureLootIds.insert(cInfo->loot_id);
+            }
+            while (result->NextRow());
+        }
+
+        if (std::unique_ptr<QueryResult> result = WorldDatabase.Query("SELECT `map`, `id` FROM `gameobject`"))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                MapEntry const* mapEntry = sMapStorage.LookupEntry<MapEntry>(fields[0].GetUInt32());
+                bool const inInstance = mapEntry && mapEntry->IsDungeon();
+
+                GameObjectInfo const* goInfo = GetGameObjectTemplate(fields[1].GetUInt32());
+                if (!goInfo || !goInfo->GetLootId())
+                    continue;
+
+                if (inInstance)
+                    instanceGameobjectLootIds.insert(goInfo->GetLootId());
+                else
+                    worldGameobjectLootIds.insert(goInfo->GetLootId());
+            }
+            while (result->NextRow());
+        }
+
+        std::unordered_set<uint32> referenceIds;
+        MarkLootSource("creature_loot_template", instanceCreatureLootIds, GEAR_SOURCE_INSTANCE_LOOT, referenceIds);
+        MarkLootSource("gameobject_loot_template", instanceGameobjectLootIds, GEAR_SOURCE_INSTANCE_LOOT, referenceIds);
+        FollowLootReferences(referenceIds, GEAR_SOURCE_INSTANCE_LOOT);
+
+        // The loot of the creatures and of the game objects that are not inside a dungeon or a raid, which is the
+        // gear that a player finds while adventuring in the world
+        referenceIds.clear();
+        MarkLootSource("creature_loot_template", worldCreatureLootIds, GEAR_SOURCE_WORLD_LOOT, referenceIds);
+        MarkLootSource("gameobject_loot_template", worldGameobjectLootIds, GEAR_SOURCE_WORLD_LOOT, referenceIds);
+        FollowLootReferences(referenceIds, GEAR_SOURCE_WORLD_LOOT);
+
+        // The fishing pools, the skinning and the pickpocketing, and the containers and the mail of the world
+        static char const* const worldLootTables[] =
+        {
+            "fishing_loot_template", "skinning_loot_template", "pickpocketing_loot_template",
+            "item_loot_template", "mail_loot_template"
+        };
+
+        for (char const* lootTable : worldLootTables)
+            MarkAllLootTableSource(lootTable, GEAR_SOURCE_WORLD_LOOT);
+    }
+
+    // Items made by a profession or created by a spell are not limited to one faction
+    for (uint32 spellId = 0; spellId < sSpellMgr.GetMaxSpellId(); ++spellId)
+    {
+        SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+        if (!spellInfo)
+            continue;
+
+        for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+        {
+            if (spellInfo->Effect[effect] != SPELL_EFFECT_CREATE_ITEM || !spellInfo->EffectItemType[effect])
+                continue;
+
+            if (ItemPrototype const* proto = GetItemPrototype(uint32(spellInfo->EffectItemType[effect])))
+            {
+                proto->SourceTeams |= GEAR_SOURCE_TEAM_ANY;
+
+                // The gear that a profession makes is always available to a player that can pay for it
+                if (proto->Class == ITEM_CLASS_WEAPON || proto->Class == ITEM_CLASS_ARMOR)
+                    proto->SourceKinds |= GEAR_SOURCE_CRAFTED;
+            }
+        }
+    }
 }
 
 void ObjectMgr::LoadNpcGossips()

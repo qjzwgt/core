@@ -327,6 +327,13 @@ class ConditionEntry
         // Checks if the condition is met
         bool Meets(WorldObject const* target, Map const* map, WorldObject const* source, ConditionSource conditionSourceType) const;
 
+        // Condition type and values, used to index what a condition requires (see ObjectMgr::LoadItemGearSources)
+        ConditionType GetType() const { return m_condition; }
+        int32 GetValue1() const { return m_value1; }
+        int32 GetValue2() const { return m_value2; }
+        int32 GetValue3() const { return m_value3; }
+        int32 GetValue4() const { return m_value4; }
+
         Team GetTeam() const
         {
             return m_condition == CONDITION_TEAM ? Team(m_value1) : TEAM_CROSSFACTION;

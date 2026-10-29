@@ -399,6 +399,31 @@ enum ItemExtraFlags
     ITEM_EXTRA_ALL                 = 0x07       // All used flags, used to check DB data (mask all above flags)
 };
 
+// What an item costs to obtain, assigned while indexing the sources of each item (ObjectMgr::LoadItemGearSources).
+enum ItemGearSourceRestrictions
+{
+    GEAR_SOURCE_REPUTATION  = 0x01,                       // needs a reputation standing with a faction
+    GEAR_SOURCE_PVP         = 0x02,                       // needs an honor rank, or is a reward of pvp content
+    GEAR_SOURCE_WORLD_EVENT = 0x04                        // only obtainable while a world event or holiday is active
+};
+
+// Which of the two factions can obtain the item. Items with no faction limited source keep 0, which means any team.
+enum ItemGearSourceTeams
+{
+    GEAR_SOURCE_TEAM_ALLIANCE = 0x01,
+    GEAR_SOURCE_TEAM_HORDE    = 0x02,
+    GEAR_SOURCE_TEAM_ANY      = GEAR_SOURCE_TEAM_ALLIANCE | GEAR_SOURCE_TEAM_HORDE
+};
+
+// How an item can be obtained, which says how plausible it is for a bot of a given level to have it
+enum ItemGearSourceKinds
+{
+    GEAR_SOURCE_QUEST_REWARD    = 0x01,                       // reward of a quest
+    GEAR_SOURCE_INSTANCE_LOOT   = 0x02,                       // dropped in a dungeon or a raid
+    GEAR_SOURCE_WORLD_LOOT      = 0x04,                       // dropped or fished in the open world, or in a container
+    GEAR_SOURCE_CRAFTED         = 0x08                        // made by a profession or created by a spell
+};
+
 // GCC have alternative #pragma pack(N) syntax and old gcc version not support pack(push,N), also any gcc version not support it at some platform
 #if defined(__GNUC__)
 #pragma pack(1)
@@ -503,6 +528,9 @@ struct ItemPrototype
     mutable uint32 SourceQuestRaces = 0;                    // allowed races of quest that rewards this item
     mutable uint32 SourceQuestClasses = 0;                  // allowed classes of quest that rewards this item
     mutable bool Discovered = false;                        // has item been discovered by players
+    mutable uint32 SourceRestrictions = 0;                  // ItemGearSourceRestrictions of the sources of this item
+    mutable uint32 SourceTeams = 0;                         // ItemGearSourceTeams, 0 when no faction limited source
+    mutable uint32 SourceKinds = 0;                         // ItemGearSourceKinds, how the item can be obtained
 
     // helpers
     bool CanChangeEquipStateInCombat() const

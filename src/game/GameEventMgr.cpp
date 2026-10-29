@@ -162,6 +162,19 @@ bool GameEventMgr::IsEnabled(uint16 event_id)
     return mGameEvent[event_id].disabled == 0;
 }
 
+bool GameEventMgr::IsQuestInGameEvent(uint32 questId) const
+{
+    for (auto const& questList : mGameEventQuests)
+    {
+        for (uint32 quest : questList)
+        {
+            if (quest == questId)
+                return true;
+        }
+    }
+    return false;
+}
+
 void GameEventMgr::LoadFromDB()
 {
     {

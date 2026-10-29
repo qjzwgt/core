@@ -129,6 +129,9 @@ class GameEventMgr
         GameEventCreatureData const* GetCreatureUpdateDataForActiveEvent(uint32 lowguid) const;
         HardcodedEventList mGameEventHardcodedList;
         void LoadHardcodedEvents(HardcodedEventList& eventList);
+
+        // True if the quest is part of a world event or holiday (game_event_quest)
+        bool IsQuestInGameEvent(uint32 questId) const;
     private:
         bool m_IsSilithusEventCompleted;
         void ApplyNewEvent(uint16 event_id, bool resume);

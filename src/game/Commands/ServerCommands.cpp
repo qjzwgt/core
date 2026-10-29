@@ -919,6 +919,9 @@ bool ChatHandler::HandleReloadAllLootCommand(char* /*args*/)
     LootIdSet ids_set;
     LoadLootTables(ids_set);
     SendSysMessage("DB tables `*_loot_template` reloaded.");
+
+    // the gear that bots can be given is built from the sources of each item
+    sObjectMgr.LoadItemGearSources();
     return true;
 }
 
@@ -1148,6 +1151,9 @@ bool ChatHandler::HandleReloadQuestTemplateCommand(char* /*args*/)
     sObjectMgr.LoadQuests();
     SendSysMessage("DB table `quest_template` (quest definitions) reloaded.");
 
+    // the gear that bots can be given is built from the sources of each item
+    sObjectMgr.LoadItemGearSources();
+
     // dependent also from `gameobject` but this table not reloaded anyway
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Re-Loading GameObjects for quests...");
     sObjectMgr.LoadGameObjectForQuests();
@@ -1299,6 +1305,10 @@ bool ChatHandler::HandleReloadNpcVendorCommand(char* /*args*/)
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Re-Loading `npc_vendor` Table!");
     sObjectMgr.LoadVendors();
     SendSysMessage("DB table `npc_vendor` reloaded.");
+
+    // the gear that bots can be given is built from the sources of each item
+    sObjectMgr.LoadItemGearSources();
+
     return true;
 }
 
@@ -1745,6 +1755,9 @@ bool ChatHandler::HandleReloadItemTemplate(char*)
 {
     sObjectMgr.LoadItemPrototypes();
     SendSysMessage(">> Table `item_template` reloaded.");
+
+    // the source of each item is stored in its prototype, so the reload above has removed it
+    sObjectMgr.LoadItemGearSources();
     return true;
 }
 
@@ -1941,6 +1954,9 @@ bool ChatHandler::HandleReloadConditionsCommand(char* /*args*/)
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Re-Loading `conditions`... ");
     sObjectMgr.LoadConditions();
     SendSysMessage("DB table `conditions` reloaded.");
+
+    // quest rewards and vendor items are restricted by conditions
+    sObjectMgr.LoadItemGearSources();
     return true;
 }
 
