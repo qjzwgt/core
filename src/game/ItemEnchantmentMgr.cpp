@@ -22,6 +22,7 @@
 #include <functional>
 #include "ItemEnchantmentMgr.h"
 #include "Database/DatabaseEnv.h"
+#include "DBCStores.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "ProgressBar.h"
@@ -69,6 +70,15 @@ void LoadRandomEnchantmentsTable()
             entry = fields[0].GetUInt32();
             ench = fields[1].GetUInt32();
             float chance = fields[2].GetFloat();
+
+            // A property that the client of the realm does not know can never be put on an item, and a row of it
+            // makes the whole group of the item unusable: the items of that group are created without any property
+            // at all. Such a row is left out here, where it can be named, and not at the items that use it.
+            if (!sItemRandomPropertiesStore.LookupEntry(ench))
+            {
+                sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Entry %u ench %u is not a property of `ItemRandomProperties.dbc`, skipping.", entry, ench);
+                continue;
+            }
 
             if (chance > 0.000001f && chance <= 100.0f)
             {

@@ -4144,7 +4144,11 @@ void ObjectMgr::LoadItemPrototypes()
             const_cast<ItemPrototype*>(proto)->Sheath = SHEATHETYPE_NONE;
         }
 
-        if (proto->RandomProperty && !sItemRandomPropertiesStore.LookupEntry(GetItemEnchantMod(proto->RandomProperty)))
+        // The field names a group of `item_enchantment_template` and the item is created with one property of that
+        // group, so the group as a whole is what has to be usable. Rolling one property of the group here, as the
+        // check did, takes the field away from every item of the group because of one bad row of it, and takes it
+        // away differently at every start of the realm.
+        if (proto->RandomProperty && GetItemEnchantMods(proto->RandomProperty).empty())
         {
             sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Item (Entry: %u) has unknown (wrong or not listed in `item_enchantment_template`) RandomProperty (%u)", i, proto->RandomProperty);
             const_cast<ItemPrototype*>(proto)->RandomProperty = 0;

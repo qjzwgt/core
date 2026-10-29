@@ -183,9 +183,13 @@ are 0 - the property is the one that the creation of the item for a player would
 table. A bot that wore such an item without any suffix wore something that no player has, and the suffix is part of
 what the item is worth.
 
-An entry whose group has no row of `item_enchantment_template` for the patch of the server has no property at all:
-the loading of `item_template` zeroes `RandomProperty` and writes a line that names the entry. That is data for
-`sql/custom/repack/`, not something the rating can fix.
+An entry whose group has nothing left of `item_enchantment_template` for the patch of the server has no property at
+all: the loading of `item_template` zeroes `RandomProperty` and writes a line that names the entry. That is data for
+`sql/custom/repack/`, not something the rating can fix. Only the whole group is checked there, never one rolled
+property of it: one rolled property was enough to take the field away from every item of the group, and to take it
+away differently at every start of the realm. A row whose property is not in `ItemRandomProperties.dbc` of the
+client, as well as a row whose chance is not a chance, is left out when `item_enchantment_template` is loaded and
+named there, where a row can be named, and not at the thousands of items that use the group.
 
 `Player::StoreNewItemInBestSlots()` would roll another property, so the items are created with
 `Player::StoreNewItemInSlot()`, which puts the item in one given slot with the chosen property and applies the mods
