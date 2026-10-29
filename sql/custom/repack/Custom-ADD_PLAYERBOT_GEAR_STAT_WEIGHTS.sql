@@ -1,10 +1,9 @@
 -- The table that holds the attribute weights used to dress the player bots, so that the values can be
 -- tuned without compiling again (`.bot reload` reads the table again).
 --
--- Same content as sql/migrations/20261029091000_world.sql, without the add_migration wrapper, so that an
--- existing repack database gets the table without running the migration pipeline again. `CREATE TABLE IF
--- NOT EXISTS` leaves an existing table and its rows alone, so the tuning of a running server survives
--- applying this file again.
+-- The table is added by this file: this fork adds nothing to sql/migrations, its sql changes live in this
+-- directory and are applied by hand in the order of README.md here. `CREATE TABLE IF NOT EXISTS` leaves an existing
+-- table and its rows alone, so the tuning of a running server survives applying this file again.
 --
 -- The compiled values of src/game/PlayerBots/BotGearScoring.cpp are used for the pairs that have no row
 -- here, so the table only needs the rows that change a value.

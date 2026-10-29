@@ -29,9 +29,9 @@ tree the bot has and from its role, which is also what tells the cat from the be
 
 The talents come from `playerbot_talent_build` (world), which holds one row per step of a build: `class`, the page of
 the talent that the build is for, the order of the step, a spell id of the talent and the number of ranks to take.
-The table is created by `sql/migrations/20261029130100_world.sql` and by
-`sql/custom/repack/Custom-ADD_PLAYERBOT_TALENT_BUILD.sql`; the rows are hand made content and live in
-`sql/custom/PLAYERBOT_TALENT_BUILDS.sql`. The steps of a build are all keyed by the class and the asked page, even
+The table is created by `sql/custom/repack/Custom-ADD_PLAYERBOT_TALENT_BUILD.sql`; the rows are hand made content
+and live in `sql/custom/repack/Custom-PLAYERBOT_TALENT_BUILDS.sql`, which is applied after it, as
+`sql/custom/repack/README.md` explains. The steps of a build are all keyed by the class and the asked page, even
 the steps that are talents of another tree of that class. `src/game/PlayerBots/BotTalentBuild.{h,cpp}` reads the
 table, resolves every spell id to the talent of Talent.dbc that has it, and skips a row that is not a talent of the
 class it is declared for with a word in the log; `.bot reload` reads it again, so a build can be retuned without a
@@ -124,8 +124,9 @@ visible). Bots do not wear trinkets, so their effects are not needed.
 
 ## Changing the weights
 
-`playerbot_gear_stat_weights(spec, stat, weight)` (see `sql/migrations/20261029091000_world.sql` for the meaning of
-every id) overrides single values, and only the pairs that a row gives: the compiled value is used for everything
+`playerbot_gear_stat_weights(spec, stat, weight)` (see
+`sql/custom/repack/Custom-ADD_PLAYERBOT_GEAR_STAT_WEIGHTS.sql` for the meaning of every id) overrides single
+values, and only the pairs that a row gives: the compiled value is used for everything
 else. `.bot reload` reads the table again, so no restart and no compiling is needed.
 
 `.partybot gearscore <item>` with a bot selected prints, for the talent of that bot, every attribute that the item

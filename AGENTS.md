@@ -24,13 +24,17 @@ the code, correct it in the same commit.
   `sPlayer`-style names for the static singletons. Comments explain why, in full English sentences.
 
 ## SQL
-- Schema and data upgrades go in `sql/migrations/YYYYmmddHHMMSS_<world|characters|logon>.sql`, where the name is
-  the UTC time and the same value is inserted into `migrations` (see `sql/migrations/README`). Real migrations
-  wrap their queries in the `add_migration` procedure - copy a recent file such as
-  `sql/migrations/20261029091000_world.sql` rather than writing the wrapper from memory.
-- Never edit a migration that has been pushed; add a new one.
-- Hand made content for this fork lives in `sql/custom/`, which is applied last and must be re-runnable without
-  damaging the database (`sql/custom/README.md`).
+- Every sql change of this fork - schema or data - is a file in `sql/custom/repack/`, applied by hand. Nothing is
+  added to `sql/migrations/`, which is upstream's: `migrations_list.h` is generated from that folder when CMake
+  configures, and the world server refuses to start when a listed migration is missing. A file of the fork has no
+  `add_migration` wrapper and does not touch the `migrations` table.
+- Do not edit an upstream migration that has been pushed; the change is another file of `sql/custom/repack/`.
+- A file of `sql/custom/repack/` must be re-runnable without damaging the database: `CREATE TABLE IF NOT EXISTS`
+  for a table, the rows of one object deleted and written back as a whole, a flag set with `x = x | flag`. The
+  order the files are applied in, and what each of them targets, is in `sql/custom/repack/README.md` - keep that
+  file true when a new file depends on another.
+- The content that this fork was started with stays where it is in `sql/custom/` (`sql/custom/README.md`); new
+  content goes to the `repack/` directory under it.
 - Prefer the existing patch aware table conventions (`*_add` / `*_remove` / patch columns) over encoding patch
   behaviour in C++.
 

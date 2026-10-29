@@ -3,9 +3,9 @@
 -- attack them on sight, whether they are PvP flagged or not, and he must not join the fights of the
 -- other Horde NPCs and players around him.
 --
--- Same content as sql/migrations/20261029022326_world.sql, without the add_migration wrapper, so that
--- an existing repack database gets it without running the migration pipeline again. The queries below
--- only set bits and replace one row, so the file can be applied any number of times.
+-- This change lives only here: the fork adds nothing to sql/migrations, its sql changes live in this directory
+-- and are applied by hand in the order of README.md here. The queries below only set bits and replace one row, so
+-- the file can be applied any number of times.
 --
 -- Only Attack PvP Enabling (static_flags1 0x04000000) still aggroes on PvP flagged players, and
 -- Ignore Combat (static_flags1 0x02000000) sets the passive react state, which also makes

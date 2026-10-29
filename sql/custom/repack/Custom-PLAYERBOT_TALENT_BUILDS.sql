@@ -1,7 +1,7 @@
 -- The talent build that a bot of one talent learns: one step of a build per row, in the order in which the points
--- are spent. The table itself comes from sql/migrations/20261029130100_world.sql, and from
--- sql/custom/repack/Custom-ADD_PLAYERBOT_TALENT_BUILD.sql for a repack database; the content of the table lives
--- here, because the builds are chosen by hand for this fork. The file can be applied again: the steps of one
+-- are spent. The table comes from Custom-ADD_PLAYERBOT_TALENT_BUILD.sql of this directory, which is applied
+-- before this file (README.md here gives the order); the content of the table lives here, because the builds are
+-- chosen by hand for this fork. The file can be applied again: the steps of one
 -- talent are deleted and written back as a whole build, so a build that was tuned by hand is replaced whole and
 -- no half of it is left behind. `.bot reload` reads the table again without a restart; see
 -- src/game/PlayerBots/BotTalentBuild.cpp, which resolves every `rank_spell` and says in the log what does not fit

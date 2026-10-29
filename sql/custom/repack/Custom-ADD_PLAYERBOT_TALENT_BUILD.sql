@@ -1,13 +1,12 @@
 -- The table that holds the talent builds that the player bots learn, so that the builds of the talents can be
 -- tuned without compiling again (`.bot reload` reads the table again).
 --
--- Same content as sql/migrations/20261029130100_world.sql, without the add_migration wrapper, so that an existing
--- repack database gets the table without running the migration pipeline again. `CREATE TABLE IF NOT EXISTS` leaves
--- an existing table and its rows alone, so a build that was tuned on a running server survives applying this file
--- again.
+-- The table is added by this file: this fork adds nothing to sql/migrations, its sql changes live in this
+-- directory and are applied by hand in the order of README.md here. `CREATE TABLE IF NOT EXISTS` leaves an existing
+-- table and its rows alone, so a build that was tuned on a running server survives applying this file again.
 --
 -- Only the table is here. The rows of the builds are hand made content for this fork and live in
--- sql/custom/PLAYERBOT_TALENT_BUILDS.sql, which is applied after the migrations and after this file.
+-- Custom-PLAYERBOT_TALENT_BUILDS.sql of this directory, which is applied after this file.
 
 
 -- The talent build that a bot learns, one row per step of a build. A bot spends its free talent points following
@@ -18,8 +17,8 @@
 -- `.bot reload` reads the table again, so a build can be retuned without a restart and without compiling; see
 -- src/game/PlayerBots/BotTalentBuild.cpp, which resolves every `rank_spell` and says in the log what does not fit.
 -- Only the table is added here. The rows are the builds that this fork chose, and they live in
--- sql/custom/PLAYERBOT_TALENT_BUILDS.sql, which is applied after the migrations; a database without that file
--- works as it did before, and the fallbacks above.
+-- Custom-PLAYERBOT_TALENT_BUILDS.sql of this directory, which is applied after this file; a database without that
+-- file works as it did before, with the fallbacks above.
 --
 -- `class` and `talent_page` say which talent the build is for. A build is looked up by the class of the bot and by
 -- the page of its talent (TalentTabEntry.tabpage), which is what the abbreviations of `.partybot add` give:
