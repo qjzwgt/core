@@ -119,6 +119,11 @@ BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec);
 BotGearSpecAlias const* GetBotGearSpecAlias(char const* alias, Team team);
 // The id of the talent tab of one page of a class (TalentTabEntry.tabpage), false when the class has no such page
 bool GetClassTalentTab(uint8 botClass, uint8 tabpage, uint32& talentTab);
+// The talent page that a bot of that class and role is built with, taken from the abbreviations of
+// `.partybot add`: a bot summoned by a role has no asked talent, but the class and the role together say which
+// tree the players of this fork build it with. False when the class and the role have no abbreviation, which is
+// the case of the classes rated by one talent and of the roles that have no tree of their own.
+bool GetSpecTalentPageForRole(uint8 botClass, CombatBotRoles role, uint8& tabpage);
 
 // The value of one attribute for one talent: the compiled defaults, overridden by `playerbot_gear_stat_weights`
 float GetBotGearStatWeight(BotGearSpec spec, BotGearStat stat);

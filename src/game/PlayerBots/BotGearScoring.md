@@ -20,11 +20,40 @@ anything here.
 
 `.partybot add <abbreviation> [level]` creates a bot of one talent: the abbreviation says the class, the role, and
 the talent page to learn (`gearSpecAliases` in `BotGearScoring.cpp`, matched by `GetBotGearSpecAlias()`).
-`CombatBotBaseAI::LearnPremadeSpecForClass()` learns that tree with `LearnTalentsInTab()` instead of looking for a
-premade template - those are chosen by role and not by talent - and then learns the spells of the trainers and of the
-items, as it does when there is no template. Nothing else is needed for the gear: the rating reads the talent back
-from the tree the bot has and from its role, which is also what tells the cat from the bear on the feral page of the
-druid.
+`CombatBotBaseAI::LearnPremadeSpecForClass()` learns the build of that talent instead of looking for a premade
+template - those are chosen by role and not by talent - and then learns the spells of the trainers and of the items,
+as it does when there is no template. Nothing else is needed for the gear: the rating reads the talent back from the
+tree the bot has and from its role, which is also what tells the cat from the bear on the feral page of the druid.
+
+## The talents that a bot learns
+
+The talents come from `playerbot_talent_build` (world), which holds one row per step of a build: `class`, the page of
+the talent that the build is for, the order of the step, a spell id of the talent and the number of ranks to take.
+The table is created by `sql/migrations/20261029130100_world.sql` and by
+`sql/custom/repack/Custom-ADD_PLAYERBOT_TALENT_BUILD.sql`; the rows are hand made content and live in
+`sql/custom/PLAYERBOT_TALENT_BUILDS.sql`. The steps of a build are all keyed by the class and the asked page, even
+the steps that are talents of another tree of that class. `src/game/PlayerBots/BotTalentBuild.{h,cpp}` reads the
+table, resolves every spell id to the talent of Talent.dbc that has it, and skips a row that is not a talent of the
+class it is declared for with a word in the log; `.bot reload` reads it again, so a build can be retuned without a
+restart.
+
+`CombatBotBaseAI::LearnTalentsFromBuild()` spends the free talent points of the bot by walking the steps in order.
+Every build is written as the 51 points of a level 60 character of that talent - 31 in the primary tree, which is
+what the last talent of a tree asks for, and 20 in a second tree - and the steps of a tree are ordered by row, so:
+
+- a bot of any level has the first rows of the build of its talent, which is a build that a player would level with;
+- the primary tree of the talent is the tree that is filled, and another tree is touched only after it;
+- the rule that a row can not be taken before the rows above it have enough points is kept by the order of the rows.
+
+A step that can not be taken at the moment it comes (the spell that the talent asks for is learned later, the tree
+does not have the points yet) is asked for again after the following points are spent, and the ranks that the bot
+already knows are counted out first, so a bot that levels up carries on with the build it had.
+
+A bot that was not summoned with an abbreviation gets the talent that its role has for its class, taken from the same
+`gearSpecAliases` list by `GetSpecTalentPageForRole()`; the first abbreviation of the class and role wins, so two
+bots summoned the same way learn the same build. A class or a role that has no entry there, a rogue for instance, and
+a talent that has no rows in the table keep the old path: `LearnTalentsInTab()` for an asked page, and the premade
+templates of `player_premade_spell_template` otherwise.
 
 The level of the bot follows the player that asked for it: the same level while the player is level 10 or below, a
 level or two either way from 11 to 59, and always the maximum (`MaxPlayerLevel`) once the player has reached it. The

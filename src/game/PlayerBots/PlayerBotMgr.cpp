@@ -14,6 +14,7 @@
 #include "BattleBotAI.h"
 #include "CombatBotBaseAI.h"
 #include "BotGearScoring.h"
+#include "BotTalentBuild.h"
 #include "BattleBotWaypoints.h"
 #include "BattleGroundMgr.h"
 #include "MapManager.h"
@@ -79,6 +80,9 @@ void PlayerBotMgr::Load()
     // The values that rate the gear that the bots are dressed with, read again so that they can be changed
     // without restarting the server
     LoadBotGearStatWeights();
+
+    // The talent build of every talent that a bot can be summoned with, read again for the same reason
+    LoadBotTalentBuilds();
 
     // 3- Load usable account ID
     std::unique_ptr<QueryResult> result = LoginDatabase.PQuery(

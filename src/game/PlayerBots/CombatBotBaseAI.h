@@ -107,8 +107,12 @@ public:
     void LearnRandomTalents();
     // The talents of one talent tab, in the order the talents are listed in the tree
     void LearnTalentsInTab(uint32 talentTab, bool randomOrder);
-    // The talent page that `.partybot add <abbreviation>` asked for, filled with LearnTalentsInTab instead of a
-    // premade template; MAX_GEAR_SPEC_TABS when the bot was summoned without an asked talent
+    // The talents of the build that `playerbot_talent_build` gives for one talent page of the class of this bot,
+    // spent in the order of the table; false when the table has no build for that talent
+    bool LearnTalentsFromBuild(uint8 talentPage);
+    // The talent page that `.partybot add <abbreviation>` asked for, learned from `playerbot_talent_build`
+    // instead of following a premade template; MAX_GEAR_SPEC_TABS when the bot was summoned without an asked
+    // talent, which leaves the choice of the tree to the role of the bot
     void SetRequestedTalentPage(uint8 tabpage) { m_requestedTalentPage = tabpage; }
     
     uint8 GetAttackersInRangeCount(float range) const;

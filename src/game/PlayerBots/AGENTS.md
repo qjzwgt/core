@@ -55,6 +55,13 @@ document and the code in step - it is what the maintainer reads to tune the valu
   the compiled value. `.bot reload` reads the table again, so changing a value needs neither a restart nor a
   build. The ids of `spec` and `stat` are documented in the migration that creates the table and in the enums of
   `BotGearScoring.h`.
+- `playerbot_talent_build(class, talent_page, seq, rank_spell, ranks, name)` is the build that a bot of one talent
+  learns: one step per row, spent in `seq` order, so a bot of any level has the first steps of the build and its
+  primary tree is the tree that gets filled. The table comes from the migration; the rows are hand made content in
+  `sql/custom/PLAYERBOT_TALENT_BUILDS.sql`, which is re-runnable. `.bot reload` reads it again. The steps of a
+  build are keyed by the class and the asked page even when they are talents of another tree, so the lookup of a
+  `rank_spell` runs over the trees of the class; a row that is not a talent of that class is skipped with a
+  `LOG_DBERROR` line naming the step, which is how a wrong spell id is found without a build.
 - `.partybot gearscore <item>` with a bot selected prints, for the talent of that bot, every attribute an item
   gives, the weight used, the partial score, the random property that would be picked and the damage per second of
   the weapon. It is the answer to "why did the bot wear that instead of this".
@@ -66,11 +73,12 @@ created new), defense rating, weapon skills.
 ## Known rough edges, on purpose
 - `.partybot add <abbreviation>` says which tree a new bot learns: the class, the role and the talent page come from
   `gearSpecAliases` in `BotGearScoring.cpp`, and `LearnPremadeSpecForClass()` fills that page with
-  `LearnTalentsInTab()` instead of applying a premade template, which is chosen by role and not by talent. The rating
-  is not told about the asked talent: it reads the tree that was learned and the role back, which is also what tells
-  the cat from the bear on the feral page of a druid. The tree is still filled in row order, so a signature spell can
-  be missing, and `AutoAssignRole()` still can not tell arms from fury or elemental from restoration when the bot was
-  not summoned with an abbreviation.
+  the build of that page from `playerbot_talent_build` instead of applying a premade template, which is chosen by
+  role and not by talent; a talent with no rows there falls back to `LearnTalentsInTab()`, which fills the tree in
+  row order and can miss a signature spell. A bot summoned without an abbreviation gets the page that its role has
+  for its class (`GetSpecTalentPageForRole()`), so `AutoAssignRole()` still can not tell arms from fury or elemental
+  from restoration; the rating is not told about the asked talent either, it reads the tree that was learned and the
+  role back, which is also what tells the cat from the bear on the feral page of a druid.
 - `Player::CanDualWield()` reads `m_canDualWield`, which is false after construction and is never set anywhere
   else, and `SKILL_DUAL_WIELD` has no grant path. Spell 674 is taught directly for that reason; a bot loaded from
   the database would otherwise lose the second weapon.

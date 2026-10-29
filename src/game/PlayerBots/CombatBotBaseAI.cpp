@@ -11,6 +11,7 @@
 #include "Chat.h"
 #include "CharacterDatabaseCache.h"
 #include "BotGearScoring.h"
+#include "BotTalentBuild.h"
 #include "Utilities/Random.h"
 
 #include <random>
@@ -2407,16 +2408,51 @@ void CombatBotBaseAI::LearnArmorProficiencies()
 
 void CombatBotBaseAI::LearnPremadeSpecForClass()
 {
-    // The talent that `.partybot add <abbreviation>` asked for is learned as it is asked, without looking for a
-    // premade template: those are chosen by role and not by talent, and the gear is rated for the talents the bot
-    // has, so learning the tree is also what dresses the bot with the gear of that talent. The role was set when the
-    // bot was created, which tells apart the two talents that share a tree (the cat and the bear of a druid).
-    if (m_requestedTalentPage < MAX_GEAR_SPEC_TABS)
+    // The talent of the bot: the one that `.partybot add <abbreviation>` asked for, or the one that the role of
+    // the bot has for its class. The premade templates are chosen by role and not by talent, and the gear is
+    // rated for the talents that the bot has, so a bot of a known talent learns the build of that talent
+    // instead: the steps of `playerbot_talent_build` are spent in the order of the table, which fills the
+    // primary tree of the talent before another tree is touched and gives a bot that has not reached the maximum
+    // level the first steps of the same build. The role was set when the bot was created, which tells apart the
+    // two talents that share a tree (the cat and the bear of a druid).
+    uint8 talentPage = m_requestedTalentPage;
+    if (talentPage >= MAX_GEAR_SPEC_TABS)
     {
-        uint32 talentTab = 0;
-        if (GetClassTalentTab(me->GetClass(), m_requestedTalentPage, talentTab))
+        uint8 rolePage = MAX_GEAR_SPEC_TABS;
+        if (GetSpecTalentPageForRole(me->GetClass(), m_role, rolePage))
+            talentPage = rolePage;
+    }
+
+    if (talentPage < MAX_GEAR_SPEC_TABS)
+    {
+        bool learned = LearnTalentsFromBuild(talentPage);
+
+        // Without a row in the table the tree of the asked talent is filled in the order the tree lists it, as
+        // it was before the table existed.
+        if (!learned && m_requestedTalentPage < MAX_GEAR_SPEC_TABS)
         {
-            LearnTalentsInTab(talentTab, false);
+            uint32 talentTab = 0;
+            if (GetClassTalentTab(me->GetClass(), m_requestedTalentPage, talentTab))
+            {
+                LearnTalentsInTab(talentTab, false);
+                learned = true;
+            }
+        }
+
+        if (learned)
+        {
+            // The rows of the table are the whole build, but a step can not be taken at all: Talent.dbc gives a
+            // talent fewer ranks than the row asks for, or the talent that a step asks for is not in the build.
+            // The points that such a row leaves behind go to the tree of the talent, in the order the tree lists
+            // its talents, rather than staying unspent; see LearnTalentsFromBuild() for the steps that are only
+            // locked for the moment they come.
+            if (me->GetFreeTalentPoints())
+            {
+                uint32 leftTab = 0;
+                if (GetClassTalentTab(me->GetClass(), talentPage, leftTab))
+                    LearnTalentsInTab(leftTab, false);
+            }
+
             // The spells of the trainers and of the items come after the talents, as in the fallback below.
             char trainerArgs[] = "";
             char itemArgs[] = "";
@@ -2542,6 +2578,56 @@ void CombatBotBaseAI::LearnTalentsInTab(uint32 talentTab, bool randomOrder)
             }
         }
     }
+}
+
+bool CombatBotBaseAI::LearnTalentsFromBuild(uint8 talentPage)
+{
+    std::vector<BotTalentBuildStep> const* steps = GetBotTalentBuild(me->GetClass(), talentPage);
+    if (!steps || steps->empty())
+        return false;
+
+    // The steps of a build start at the first rank of a talent, so the ranks that this bot already has are
+    // counted out first: a bot that was summoned before keeps the talents that it had when it was saved, and a
+    // bot that levels up spends the points that it gains from the rank that it stopped at.
+    std::map<uint32, uint32> ranksAsked;
+    for (BotTalentBuildStep const& step : *steps)
+    {
+        if (ranksAsked.find(step.talentId) == ranksAsked.end())
+            ranksAsked[step.talentId] = GetLearnedTalentRanks(me, step.talentId);
+    }
+
+    // Walking the steps once is enough when the order of the table is the order of the build, but a step can not
+    // be taken at the moment it comes: the spell that the talent asks for is learned by the trainer after the
+    // talents, or the tree does not yet have the points that the row of the talent asks for. Those steps are
+    // asked for again after the points that follow them are spent, as a player who finds a talent still locked
+    // comes back to it later, and a pass that adds nothing ends the walk.
+    bool again = true;
+    while (again && me->GetFreeTalentPoints())
+    {
+        again = false;
+
+        for (BotTalentBuildStep const& step : *steps)
+        {
+            uint32& asked = ranksAsked[step.talentId];
+
+            for (uint8 rank = 0; rank < step.ranks; ++rank)
+            {
+                if (!me->GetFreeTalentPoints())
+                    break;
+
+                if (!me->LearnTalent(step.talentId, asked))
+                    break;
+
+                ++asked;
+                again = true;
+            }
+
+            if (!me->GetFreeTalentPoints())
+                break;
+        }
+    }
+
+    return true;
 }
 
 void CombatBotBaseAI::EquipPremadeGearTemplate()

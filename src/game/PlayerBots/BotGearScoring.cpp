@@ -131,10 +131,12 @@ namespace
         { "phd", CLASS_DRUID,   ROLE_RANGE_DPS, 0,               TEAM_CROSSFACTION },
         { "yd",  CLASS_DRUID,   ROLE_MELEE_DPS, 1,               TEAM_CROSSFACTION },
         { "nd",  CLASS_DRUID,   ROLE_HEALER,    2,               TEAM_CROSSFACTION },
-        // 法师, 术士, 猎人; rated by one talent, so no tree is asked for
-        { "fs",  CLASS_MAGE,    ROLE_RANGE_DPS, MAX_GEAR_SPEC_TABS, TEAM_CROSSFACTION },
-        { "ss",  CLASS_WARLOCK, ROLE_RANGE_DPS, MAX_GEAR_SPEC_TABS, TEAM_CROSSFACTION },
-        { "lr",  CLASS_HUNTER,  ROLE_RANGE_DPS, MAX_GEAR_SPEC_TABS, TEAM_CROSSFACTION },
+        // 法师, 术士, 猎人. These classes are rated by one talent, so the rating does not care which tree is
+        // learned, but the tree still has to be asked for to learn a build of that talent instead of a build
+        // chosen by role: 冰法, 痛苦术, 瞄准猎人.
+        { "fs",  CLASS_MAGE,    ROLE_RANGE_DPS, 2,               TEAM_CROSSFACTION },
+        { "ss",  CLASS_WARLOCK, ROLE_RANGE_DPS, 0,               TEAM_CROSSFACTION },
+        { "lr",  CLASS_HUNTER,  ROLE_RANGE_DPS, 1,               TEAM_CROSSFACTION },
     };
 
     // The attributes that are a percentage are stored in hundredths of percent
@@ -514,6 +516,26 @@ BotGearSpecAlias const* GetBotGearSpecAlias(char const* alias, Team team)
     }
 
     return nullptr;
+}
+
+bool GetSpecTalentPageForRole(uint8 botClass, CombatBotRoles role, uint8& tabpage)
+{
+    if (!botClass || role == ROLE_INVALID)
+        return false;
+
+    // The first abbreviation of the class and role wins, so that two bots summoned the same way are dressed and
+    // rated the same way; a class that has several talents for one role (a warrior of melee damage) has the talent
+    // that is listed first.
+    for (auto const& entry : gearSpecAliases)
+    {
+        if (entry.botClass == botClass && entry.role == role && entry.talentTabPage < MAX_GEAR_SPEC_TABS)
+        {
+            tabpage = entry.talentTabPage;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool GetClassTalentTab(uint8 botClass, uint8 tabpage, uint32& talentTab)
