@@ -25,9 +25,14 @@
 -- gear rating does not give it, the crowd control that only matters against players) are the ranks that are left
 -- out when the 31 points are counted.
 --
--- There are no rows for a rogue, because the bot system has neither a talent abbreviation nor a gear rating for a
--- rogue: such a bot still learns the premade templates of `player_premade_spell_template`, as it did before. The
--- feral page of a druid is read as the cat by a melee damage role and as the bear by a tank role, so the two
+-- The build of a combat rogue puts all 51 points in one tree, because that is the talent that the tree teaches:
+-- a rogue is rated by its class alone (`GEAR_SPEC_ROGUE`), so `.partybot add dz` only asks which tree to learn
+-- and there is no second tree to give the extra points to. The steps of that build are ordered by row like the
+-- others, and the last talent of its tree is taken as the 31st point as in the others, so a bot that has not
+-- reached the maximum level has that talent too and spends the points that its level adds on the rows that are
+-- left.
+--
+-- The feral page of a druid is read as the cat by a melee damage role and as the bear by a tank role, so the two
 -- share one build until a build of its own is added for the bear.
 
 -- arms (武器战), class 1 warrior talent page 0: 51 points, primary tree Arms
@@ -193,6 +198,33 @@ INSERT INTO `playerbot_talent_build` VALUES (3, 2, 11, 19416, 5, 'Efficiency');
 INSERT INTO `playerbot_talent_build` VALUES (3, 2, 12, 19434, 1, 'Aimed Shot');
 INSERT INTO `playerbot_talent_build` VALUES (3, 2, 13, 19454, 5, 'Improved Arcane Shot');
 INSERT INTO `playerbot_talent_build` VALUES (3, 2, 14, 19464, 4, 'Improved Serpent Sting');
+
+-- combat (战斗贼), class 4 rogue talent page 1: 51 points, the Combat tree only
+-- The 31 points of the tree and the 20 that a level 60 character has left are spent in the same tree, so the
+-- talent of the tree comes as the 31st step and the rows that are left come after it. Two steps name the dagger
+-- skill: its first rank comes before the dual wield talent next to it, as a player takes them, and its four other
+-- ranks come with the rest of the tree. The ranks that are not taken are the crowd control that a bot does not use
+-- (Improved Gouge), the protection of a cast that a rogue never makes (Endurance), the second rank of an interrupt
+-- whose longer lock only matters against players, and the weapon skill of the one weapon kind that the gear of a
+-- combat bot is not given (fist weapons).
+DELETE FROM `playerbot_talent_build` WHERE `class`=4 AND `talent_page`=1;
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 1, 13732, 2, 'Improved Sinister Strike');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 2, 13712, 5, 'Lightning Reflexes');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 3, 13733, 3, 'Improved Backstab');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 4, 13713, 5, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 5, 13705, 5, 'Precision');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 6, 14251, 1, 'Riposte');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 7, 13743, 2, 'Improved Sprint');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 8, 13754, 1, 'Improved Kick');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 9, 13706, 1, 'Dagger Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 10, 13715, 5, 'Dual Wield Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 11, 13750, 1, 'Adrenaline Rush');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 12, 13706, 4, 'Dagger Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 13, 13709, 5, 'Mace Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 14, 13877, 1, 'Blade Flurry');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 15, 13960, 5, 'Sword Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 16, 30919, 2, 'Weapon Expertise');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 17, 18427, 3, 'Aggression');
 
 -- discipline (戒律牧), class 5 priest talent page 0: 51 points, primary tree Discipline
 DELETE FROM `playerbot_talent_build` WHERE `class`=5 AND `talent_page`=0;

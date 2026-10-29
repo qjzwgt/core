@@ -45,15 +45,20 @@ what the last talent of a tree asks for, and 20 in a second tree - and the steps
 - the primary tree of the talent is the tree that is filled, and another tree is touched only after it;
 - the rule that a row can not be taken before the rows above it have enough points is kept by the order of the rows.
 
+The build of 战斗 puts all 51 points in one tree, because that tree is the talent: a combat rogue has no second tree
+to spend the extra points in. Its steps are ordered by row like the others, and the last talent of the tree is still
+the 31st point, so a bot of level 40 or above has that spell and the points that its level adds go to the rows that
+are left.
+
 A step that can not be taken at the moment it comes (the spell that the talent asks for is learned later, the tree
 does not have the points yet) is asked for again after the following points are spent, and the ranks that the bot
 already knows are counted out first, so a bot that levels up carries on with the build it had.
 
 A bot that was not summoned with an abbreviation gets the talent that its role has for its class, taken from the same
 `gearSpecAliases` list by `GetSpecTalentPageForRole()`; the first abbreviation of the class and role wins, so two
-bots summoned the same way learn the same build. A class or a role that has no entry there, a rogue for instance, and
-a talent that has no rows in the table keep the old path: `LearnTalentsInTab()` for an asked page, and the premade
-templates of `player_premade_spell_template` otherwise.
+bots summoned the same way learn the same build. A class or a role that has no entry there, 熊德 or 戒律牧师 for
+instance, and a talent that has no rows in the table keep the old path: `LearnTalentsInTab()` for an asked page, and
+the premade templates of `player_premade_spell_template` otherwise.
 
 The level of the bot follows the player that asked for it: the same level while the player is level 10 or below, a
 level or two either way from 11 to 59, and always the maximum (`MaxPlayerLevel`) once the player has reached it. The
@@ -67,13 +72,14 @@ maximum.
 | `ms` `am` | 治疗牧师, 暗牧 | holy 1, shadow 2 |
 | `yss` `zqs` `ns` | 元素萨, 增强萨, 恢复萨 (Horde) | elemental 0, enhancement 1, restoration 2 |
 | `phd` `yd` `nd` | 平衡德, 野德, 奶德 | balance 0, feral 1, restoration 2 |
-| `fs` `ss` `lr` | 法师, 术士, 猎人 | none, the class is rated by one talent |
+| `fs` `ss` `lr` | 法师, 术士, 猎人 | frost 2, affliction 0, marksmanship 1 |
+| `dz` | 盗贼 (战斗) | combat 1 |
 
-The classes of the last row are rated by one talent (`GEAR_SPEC_MAGE`, `GEAR_SPEC_WARLOCK`, `GEAR_SPEC_HUNTER`), so
-no tree is asked for and the bot takes a premade build of its role as before. `yd` is the cat: a bear is the same
-page with `ROLE_TANK`, and 熊德, 戒律牧师 and the three rogue talents have no abbreviation yet. The tree itself is
-filled in the order the tree lists its talents, so a signature spell can still be missing; the points that the level
-of the bot pays for are the only limit.
+The classes of the last two rows are rated by one talent (`GEAR_SPEC_ROGUE`, `GEAR_SPEC_MAGE`, `GEAR_SPEC_WARLOCK`,
+`GEAR_SPEC_HUNTER`), so the rating does not care which of their trees is learned; the page is still asked for,
+because the page is what makes the bot learn the build of one talent instead of a build chosen by its role. `yd` is
+the cat: a bear is the same page with `ROLE_TANK`, and 熊德, 戒律牧师 and the other two rogue talents have no
+abbreviation yet.
 
 ## The pool of items
 

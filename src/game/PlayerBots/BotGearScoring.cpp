@@ -137,6 +137,9 @@ namespace
         { "fs",  CLASS_MAGE,    ROLE_RANGE_DPS, 2,               TEAM_CROSSFACTION },
         { "ss",  CLASS_WARLOCK, ROLE_RANGE_DPS, 0,               TEAM_CROSSFACTION },
         { "lr",  CLASS_HUNTER,  ROLE_RANGE_DPS, 1,               TEAM_CROSSFACTION },
+        // 盗贼. A rogue is rated by its class, so only the tree is asked for: 战斗, and the build of that tree puts
+        // every point of the rogue in it, which is what a player of that talent does.
+        { "dz",  CLASS_ROGUE,   ROLE_MELEE_DPS, 1,               TEAM_CROSSFACTION },
     };
 
     // The attributes that are a percentage are stored in hundredths of percent
