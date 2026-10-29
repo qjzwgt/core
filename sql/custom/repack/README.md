@@ -34,8 +34,10 @@ merged the way the bot customization was.
 What a running server needs to see the change:
 
 - the two `playerbot_*` tables of `Custom-BOT_CUSTOMIZATION.sql`: `.bot reload`, no restart;
-- `creature_template`, `creature_linking`, `npc_vendor`, `gossip_*`, `item_template`, `spell_template`, `variables`,
-  `playercreateinfo`: a restart, or the matching `.reload` sub command.
+- `creature_template`, `npc_vendor`, `gossip_*`, `item_template`, `spell_template`, `variables`, `playercreateinfo`: a
+  restart, or the matching `.reload` sub command;
+- `creature_linking` and `creature_linking_template`, which are read once at startup (`src/game/World.cpp`): a
+  restart, as there is no `.reload` for them.
 
 ## Databases that already have today's migrations
 
