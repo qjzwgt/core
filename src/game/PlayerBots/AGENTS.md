@@ -54,16 +54,16 @@ document and the code in step - it is what the maintainer reads to tune the valu
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
   the compiled value. `.bot reload` reads the table again, so changing a value needs neither a restart nor a
   build. The ids of `spec` and `stat` are documented in
-  `sql/custom/repack/Custom-ADD_PLAYERBOT_GEAR_STAT_WEIGHTS.sql` and in the enums of `BotGearScoring.h`.
+  `sql/custom/repack/Custom-BOT_CUSTOMIZATION.sql` and in the enums of `BotGearScoring.h`.
 - `playerbot_talent_build(class, talent_page, seq, rank_spell, ranks, name)` is the build that a bot of one talent
   learns: one step per row, spent in `seq` order, so a bot of any level has the first steps of the build and its
   primary tree is the tree that gets filled. The table comes from
-  `sql/custom/repack/Custom-ADD_PLAYERBOT_TALENT_BUILD.sql` and the rows are hand made content in
-  `sql/custom/repack/Custom-PLAYERBOT_TALENT_BUILDS.sql`, which is applied after it and is re-runnable; the order
-  of the sql of the fork is in `sql/custom/repack/README.md`. `.bot reload` reads the table again. The steps of a
-  build are keyed by the class and the asked page even when they are talents of another tree, so the lookup of a
-  `rank_spell` runs over the trees of the class; a row that is not a talent of that class is skipped with a
-  `LOG_DBERROR` line naming the step, which is how a wrong spell id is found without a build.
+  `sql/custom/repack/Custom-BOT_CUSTOMIZATION.sql`, which creates the table and writes the builds that this fork
+  chose into it below, in the same file, and is re-runnable; the order of the sql of the fork is in
+  `sql/custom/repack/README.md`. `.bot reload` reads the table again. The steps of a build are keyed by the class
+  and the asked page even when they are talents of another tree, so the lookup of a `rank_spell` runs over the
+  trees of the class; a row that is not a talent of that class is skipped with a `LOG_DBERROR` line naming the
+  step, which is how a wrong spell id is found without a build.
 - `.partybot gearscore <item>` with a bot selected prints, for the talent of that bot, every attribute an item
   gives, the weight used, the partial score, the random property that would be picked and the damage per second of
   the weapon. It is the answer to "why did the bot wear that instead of this".

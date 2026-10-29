@@ -15,30 +15,32 @@ Every file here is for the `world` database, and every one of them must be safe 
 - there is no `add_migration` wrapper, and the `migrations` table is not touched.
 
 The name says what the file does: `Custom-ADD_...`, `Custom-REMOVE_...`, `Custom-RESET_...`,
-`Item-<entry>_<name>`, `AQ-SET_GATES_...`.
+`Item-<entry>_<name>`, `AQ-SET_GATES_...`. A file may also be named after the feature it is, when the feature is
+one thing that is applied at once: `Custom-BOT_CUSTOMIZATION.sql` is the whole of the bot customization, its
+tables and its rows together, because a file of tables and a second file of their rows are one change that has to
+be taken as a whole.
 
 ## The order
 
-The files do not depend on each other, except for one pair, and only because one holds the rows of the table that
-the other creates:
+Apply the files in name order; a shell glob gives that, and it is right. The only order that matters is inside
+`Custom-BOT_CUSTOMIZATION.sql`, which is read from top to bottom: a table comes before the rows written into it.
+Nothing else here depends on anything else, so a file can be applied alone.
 
-1. `Custom-ADD_PLAYERBOT_TALENT_BUILD.sql` - the table `playerbot_talent_build`.
-2. `Custom-PLAYERBOT_TALENT_BUILDS.sql` - the rows of that table, the builds of the talents of this fork.
-
-`Custom-ADD_PLAYERBOT_GEAR_STAT_WEIGHTS.sql` creates a table without rows and is not read by any other file, so it
-can go anywhere. Everything else changes tables that already exist. Applying the directory in name order therefore
-works, and it is what a shell glob gives.
+Two pairs are deliberately not applied together, because they are switches and not steps:
+`AQ-SET_GATES_OPEN` / `AQ-SET_GATES_CLOSED`, and `Custom-ADD_GM_ISLAND_VENDORS` /
+`Custom-REMOVE_GM_ISLAND_VENDORS`. That is why they are separate files, and why the rest of the directory cannot be
+merged the way the bot customization was.
 
 What a running server needs to see the change:
 
-- the two `playerbot_*` tables: `.bot reload`, no restart;
+- the two `playerbot_*` tables of `Custom-BOT_CUSTOMIZATION.sql`: `.bot reload`, no restart;
 - `creature_template`, `creature_linking`, `npc_vendor`, `gossip_*`, `item_template`, `spell_template`, `variables`,
   `playercreateinfo`: a restart, or the matching `.reload` sub command.
 
 ## Databases that already have today's migrations
 
-`20261029022326`, `20261029091000` and `20261029130100` were moved out of `sql/migrations/` into
-`Custom-REXXAR_NO_AGGRO.sql`, `Custom-ADD_PLAYERBOT_GEAR_STAT_WEIGHTS.sql` and
-`Custom-ADD_PLAYERBOT_TALENT_BUILD.sql`. A database that recorded those ids keeps them: the world server prints a
+`20261029022326`, `20261029091000` and `20261029130100` were moved out of `sql/migrations/`: their queries are now
+in `Custom-REXXAR_NO_AGGRO.sql` and in `Custom-BOT_CUSTOMIZATION.sql`, which holds the gear weight table and the
+talent build table with the rows of both. A database that recorded those ids keeps them: the world server prints an
 "extra migrations" warning for them, which is only a warning, and the rows may be left in `migrations` or deleted.
 A fresh database never sees them at all and only needs the files here.

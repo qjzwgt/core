@@ -1,11 +1,96 @@
--- The talent build that a bot of one talent learns: one step of a build per row, in the order in which the points
--- are spent. The table comes from Custom-ADD_PLAYERBOT_TALENT_BUILD.sql of this directory, which is applied
--- before this file (README.md here gives the order); the content of the table lives here, because the builds are
--- chosen by hand for this fork. The file can be applied again: the steps of one
--- talent are deleted and written back as a whole build, so a build that was tuned by hand is replaced whole and
--- no half of it is left behind. `.bot reload` reads the table again without a restart; see
--- src/game/PlayerBots/BotTalentBuild.cpp, which resolves every `rank_spell` and says in the log what does not fit
--- the class that it is declared for.
+-- The sql of the player bot customization of this fork in one file: the tables that the bots read to be dressed
+-- and to learn their talents, and the talent builds that this fork chose. It is one file because it is one
+-- feature, and it is applied by hand as every file of this directory is (README.md here). It can be applied again
+-- without damaging the database: a table is created with `CREATE TABLE IF NOT EXISTS`, which leaves the rows that a
+-- running server has tuned alone, and the steps of one bot talent are deleted and written back as a whole build.
+-- `.bot reload` reads both tables again, so retuning a weight or a build needs neither a restart nor compiling.
+--
+-- The file is read from top to bottom, and that is the order that it needs:
+--   1. `playerbot_gear_stat_weights` - the attribute weights that an item is rated by. The file adds no rows:
+--      the compiled values of src/game/PlayerBots/BotGearScoring.cpp are used for a pair that has no row, so the
+--      table only holds the values that were tuned by hand.
+--   2. `playerbot_talent_build` - the build of one talent, one step of a build per row.
+--   3. the rows of that table - the builds of the talents that this fork can summon a bot with.
+--
+-- Nothing that is not a bot is here. The creature that must not aggro and the vendors of the cities are the other
+-- files of this directory, and they do not depend on this one.
+
+-- --------------------------------------------------------------------------------------- 1. the gear attributes
+-- The compiled values of src/game/PlayerBots/BotGearScoring.cpp are used for the pairs that have no row
+-- here, so the table only needs the rows that change a value.
+-- The score of an item is the sum of (what the item gives of an attribute) x (the weight of that attribute),
+-- where one percent of hit, critical strike, dodge, parry or block counts as one unit of that attribute.
+--
+-- `spec`, the talent of the bot:
+--   0 none                     8 rogue                        16 warlock
+--   1 arms warrior             9 discipline priest             17 balance druid
+--   2 fury warrior            10 holy priest                  18 feral (cat) druid
+--   3 protection warrior      11 shadow priest                19 feral (bear) druid
+--   4 holy paladin            12 elemental shaman            20 restoration druid
+--   5 protection paladin      13 enhancement shaman
+--   6 retribution paladin     14 restoration shaman
+--   7 hunter                  15 mage
+--
+-- `stat`, the attribute that the weight is for:
+--   0 strength                  8 ranged attack power        16 any resistance
+--   1 agility                   9 spell damage               17 dodge %
+--   2 intelligence             10 healing                   18 parry %
+--   3 spirit                   11 physical critical strike % 19 block %
+--   4 stamina                  12 physical hit %
+--   5 fixed mana               13 spell critical strike %
+--   6 fixed health             14 spell hit %
+--   7 melee attack power       15 mana per 5 sec
+CREATE TABLE IF NOT EXISTS `playerbot_gear_stat_weights` (
+  `spec` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `stat` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `weight` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`spec`,`stat`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+-- -------------------------------------------------------------------------------------- 2. the talent build table
+-- The talent build that a bot learns, one row per step of a build. A bot spends its free talent points following
+-- the steps of its talent in `seq` order, so the rows are written the way a player writes a build in the talent
+-- calculator: the primary tree of the talent is filled before another tree is touched, and a bot that has not
+-- reached the maximum level has the first steps of the same build. The rows of a talent that has no row here are
+-- taken from the premade templates of `player_premade_spell_template`, or learned at random when there is none.
+-- `.bot reload` reads the table again, so a build can be retuned without a restart and without compiling; see
+-- src/game/PlayerBots/BotTalentBuild.cpp, which resolves every `rank_spell` and says in the log what does not fit.
+-- Only the table is added here, and the rows of the builds are written below in this file; a
+-- database that has the table and no rows works as it did before, with the fallbacks above.
+--
+-- `class` and `talent_page` say which talent the build is for. A build is looked up by the class of the bot and by
+-- the page of its talent (TalentTabEntry.tabpage), which is what the abbreviations of `.partybot add` give:
+--   1 warrior   0 武器战 arms     1 狂暴战 fury       2 防战 protection
+--   2 paladin   0 神圣骑士 holy   1 防骑 protection   2 惩戒骑 retribution
+--   3 hunter    0 野兽控制 bm     1 射击 mm           2 生存 survival
+--   4 rogue      0 刺杀 assass    1 武器 combat       2 敏锐 subtlety
+--   5 priest    0 戒律牧 disc    1 神圣牧师 holy     2 暗牧 shadow
+--   7 shaman    0 元素萨 elem     1 增强萨 enha       2 恢复萨 resto
+--   8 mage      0 奥法 arcane     1 火法 fire          2 冰法 frost
+--   9 warlock   0 痛苦术 affl     1 恶魔术 demo       2 毁灭术 destr
+--  11 druid     0 平衡德 balance  1 野德 feral        2 恢复德 resto
+-- The feral page of a druid is read as the cat by a melee damage role and as the bear by a tank role, so one build
+-- of that page is used for both until a build of its own is added for the bear.
+--
+-- `seq` is the order of the steps of the build, starting at 1; a step takes `ranks` ranks of one talent, from the
+-- lowest rank that the bot does not have yet. A build comes back to a talent when its last rank is a late point,
+-- so a talent can have more than one step.
+-- `rank_spell` is the id of any rank of the talent in Spell.dbc, of any tree of the class; the talent that has it
+-- is looked up, and a row whose spell is not a talent of the class that it is declared for is skipped with a word
+-- in the log. The steps of one build are all keyed by the class and the `talent_page` of the talent that the build
+-- belongs to, so the steps of the second tree of a build are keyed by that talent too.
+-- `name` is the name of the talent, to read the table and to find a wrong `rank_spell` in the log.
+CREATE TABLE IF NOT EXISTS `playerbot_talent_build` (
+  `class` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `talent_page` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `seq` smallint(5) unsigned NOT NULL DEFAULT '0',
+  `rank_spell` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `ranks` tinyint(3) unsigned NOT NULL DEFAULT '1',
+  `name` varchar(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (`class`,`talent_page`,`seq`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+-- ----------------------------------------------------------------------------------------- 3. the talent builds
 --
 -- Every step of a build is keyed by the class and the `talent_page` of the talent that the build belongs to, even
 -- when the step is a talent of another tree of that class, so the rows of one talent are read as one build.
