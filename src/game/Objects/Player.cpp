@@ -656,20 +656,21 @@ bool Player::StoreNewItemInSlot(uint8 slot, uint32 itemId, int32 randomPropertyI
     if (CanEquipNewItem(slot, eDest, itemId, false) != EQUIP_ERR_OK)
         return false;
 
-    Item* pItem = EquipNewItem(eDest, itemId, true);
+    Item* pItem = Item::CreateItem(itemId, 1, GetObjectGuid());
     if (!pItem)
         return false;
 
-    // The random property can not be chosen while creating the item, and the mods of the item are applied while it
-    // is equipped, so they must be applied again with the property that was chosen for the item.
+    ItemAddedQuestCheck(itemId, 1);
+
+    // The property goes on the item before the item is equipped. Equipping applies the mods of an item and writes
+    // the item into the fields of the equipment of the player, and both read the property of the item as it is
+    // then. Those fields of the visible slot are all that another player sees of an item worn by this one, suffix
+    // and attributes included, so a property set after the equip leaves an item that shows no attributes at all.
     if (randomPropertyId > 0)
-    {
         pItem->SetItemRandomProperties(randomPropertyId);
 
-        uint8 eSlot = eDest & 255;
-        _ApplyItemMods(pItem, eSlot, false);
-        _ApplyItemMods(pItem, eSlot, true);
-    }
+    if (!EquipItem(eDest, pItem, true))
+        return false;
 
     AutoUnequipOffhandIfNeed();
 

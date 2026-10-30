@@ -44,7 +44,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    `allowDaggersAndFistWeapons` of `BotGearWeaponRules` says it, and the items of those kinds never reach the
    candidate pool of such a bot, so no slot of it can hold one.
 5. The random property of an item is read from its `item_enchantment_template` group, scored together with the
-   item, and then fixed on the created item. That is why `Player::StoreNewItemInSlot()` exists:
+   item, and then put on the item before the item is equipped. Equipping is what applies the mods of an item and
+   what writes the visible fields of the equipment of the player, which is all that another player sees of what a
+   bot wears, its suffix and the attributes of that suffix included; a property set after the equip leaves an item
+   that shows no attributes to the one who looks at the bot. That is why `Player::StoreNewItemInSlot()` exists:
    `Player::StoreNewItemInBestSlots()` rolls another property, so the bot would wear something other than what
    was rated. Naming 野熊 / 雄鹰 / 灵猴 / 猛虎 per role is not needed - the scoring picks the best of the group of
    that item where the group has one of them. An item of a group always wears one of its properties: when none of

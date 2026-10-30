@@ -192,9 +192,14 @@ client, as well as a row whose chance is not a chance, is left out when `item_en
 named there, where a row can be named, and not at the thousands of items that use the group.
 
 `Player::StoreNewItemInBestSlots()` would roll another property, so the items are created with
-`Player::StoreNewItemInSlot()`, which puts the item in one given slot with the chosen property and applies the mods
-of that property. This is also why the weapon slots are filled after the armour: the item that goes in one hand
-depends on the item that goes in the other.
+`Player::StoreNewItemInSlot()`, which puts the chosen property on the item and only then equips it, in one given
+slot. Equipping is what applies the mods of an item, and what writes the item into the visible fields of the
+equipment of the player - and those fields are all that another player sees of an item worn by a bot, its suffix and
+the attributes of that suffix included. A property set after the item is equipped therefore leaves the bot wearing an
+item that shows no attributes to the one who looks at it, however right the rating of that property was.
+
+This is also why the weapon slots are filled after the armour: the item that goes in one hand depends on the item
+that goes in the other.
 
 ## Two rules that are enforced while dressing
 
