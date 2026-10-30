@@ -46,6 +46,18 @@ enum PartyBotSpells
 #define PB_MIN_FOLLOW_ANGLE 0.0f
 #define PB_MAX_FOLLOW_ANGLE 6.0f
 
+// What is taken for a ledge that a player jumps down instead of walking around: the leader stands that much lower
+// than the bot and that close by, and the pathfinder of the follow generator has no way down to offer. The ground
+// to land on is looked for along the line from the bot to its leader, in steps of PB_DROP_STEP_LAND_DIST, and it
+// may be at most PB_DROP_LAND_BELOW_LEADER under the feet of the leader.
+#define PB_DROP_MIN_Z_DIFF 3.0f
+#define PB_DROP_MAX_Z_DIFF 25.0f
+#define PB_DROP_MAX_DIST 20.0f
+#define PB_DROP_STEP_LAND_DIST 2.0f
+#define PB_DROP_LAND_BELOW_LEADER 6.0f
+// How far above the ground it aimed for a bot may stand before it calls its pet back to it.
+#define PB_DROP_LAND_TOLERANCE 2.0f
+
 bool PartyBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
     if (!m_race && !m_class)
@@ -369,6 +381,132 @@ void PartyBotAI::WalkToCorpse(Corpse* pCorpse)
 
     if (WorldSession* pSession = me->GetSession())
         pSession->SendSpiritResurrect();
+}
+
+// A party that goes down over a ledge goes down together. The leader of a party is a player that jumps, so the bot
+// that follows it goes over the edge as well instead of waiting for a way down that the pathfinder of the follow
+// generator does not find over an edge. The pet of the bot is sent away first, because a pet that is called at the
+// top of a ledge stands there until its master walks back for it, and it is called again once the bot stands on the
+// ground below.
+bool PartyBotAI::FollowLeaderDownTheDrop(Player* pLeader)
+{
+    if (!pLeader || !pLeader->IsAlive() || me->IsTaxiFlying() || pLeader->IsTaxiFlying())
+        return false;
+
+    // A leader that rides goes down a slope rather than over an edge, and a bot that rides stays on its mount; that
+    // mount is taken off in the same update, once the leader has gotten off its own.
+    if (me->IsMounted() || pLeader->IsMounted())
+        return false;
+
+    // A boat that leaves a dock is not a ledge, so the two must stand on the same one, or on the ground.
+    if (me->GetTransport() != pLeader->GetTransport())
+        return false;
+
+    if (me->HasUnitState(UNIT_STATE_NO_FREE_MOVE))
+        return false;
+
+    float const zDrop = me->GetPositionZ() - pLeader->GetPositionZ();
+    // A step or a slope of less than this is walked down by the follow generator as it always is; a player jumps
+    // down what is more than that, and past PB_DROP_MAX_Z_DIFF the bot had better look for a way around too.
+    if (zDrop < PB_DROP_MIN_Z_DIFF || zDrop > PB_DROP_MAX_Z_DIFF)
+        return false;
+
+    // Only a leader that waits close by has just jumped down, and a bot that is on its way has a path that goes
+    // down already: the one that stands at the edge is the bot that the pathfinder stopped.
+    if (me->IsMoving() || !me->IsWithinDist2d(pLeader->GetPositionX(), pLeader->GetPositionY(), PB_DROP_MAX_DIST))
+        return false;
+
+    // The ground at the foot of the ledge is looked for along the line from the bot to its leader and the place
+    // nearest to the leader is taken: a player jumps down beside the party that waits there, and the foot of an
+    // overhang lies farther out than the edge does. A place on the ledge of the bot itself answers as no landing
+    // place, because no ground lower than the one the bot stands on is found there.
+    float const angleToLeader = me->GetAngle(pLeader);
+    float const distToLeader = me->GetDistance2d(pLeader->GetPositionX(), pLeader->GetPositionY());
+    float landX = 0.0f;
+    float landY = 0.0f;
+    float landZ = 0.0f;
+    bool landingFound = false;
+    // A leader that has come down right at the foot of the edge is looked for beside it all the same, so the
+    // search starts close enough to the bot to answer for the place the bot must step over to fall.
+    float firstStep = PB_DROP_STEP_LAND_DIST;
+    if (firstStep > distToLeader * 0.5f)
+        firstStep = distToLeader * 0.5f;
+
+    for (float dist = firstStep; dist < distToLeader; dist += PB_DROP_STEP_LAND_DIST)
+    {
+        float x;
+        float y;
+        me->GetNearPoint2D(x, y, dist, angleToLeader);
+
+        // Where no ground is found at all the height stays as it was asked for, which is the ground the bot stands
+        // on, and that answers as no landing place.
+        float z = me->GetPositionZ();
+        me->UpdateGroundPositionZ(x, y, z);
+        if (me->GetPositionZ() - z < PB_DROP_MIN_Z_DIFF)
+            continue;
+
+        // The bot lands beside its leader rather than in a pit below the place where the leader stands.
+        if (z < pLeader->GetPositionZ() - PB_DROP_LAND_BELOW_LEADER)
+            continue;
+
+        // The way over the edge must be free: over an overhang or a wall the bot has to find its way around, and
+        // the follow generator looks for that way on its own.
+        if (!me->IsWithinLOS(x, y, z, true, me->GetCollisionHeight()))
+            continue;
+
+        landX = x;
+        landY = y;
+        landZ = z;
+        landingFound = true;
+    }
+
+    if (!landingFound)
+        return false;
+
+    // A hunter that jumps down and leaves its pet above has to walk back for it, so the bot sends the pet away for
+    // the drop. A pet that fights is not sent away, and a bot that stands at an edge out of combat has none that
+    // fights.
+    if (Pet* pPet = me->GetPet())
+    {
+        if (!pPet->IsInCombat())
+        {
+            me->UnsummonPetTemporaryIfAny();
+            m_petDismissedForDrop = true;
+        }
+    }
+
+    m_dropLandingZ = landZ;
+
+    // The fall is a movement that the gravity of the client moves: the time it takes and the way down are its own,
+    // which is how a character that steps over an edge is seen. MOVE_PATHFINDING is not asked for on purpose, as
+    // there is no path over an edge to be found and a path would lead the bot back up to the edge.
+    me->GetMotionMaster()->MovePoint(0, landX, landY, landZ, MOVE_FALLING);
+    return true;
+}
+
+void PartyBotAI::CallPetBackAfterTheDrop()
+{
+    if (!m_petDismissedForDrop)
+        return;
+
+    // A pet that is back - the summon of the class update, or the call of a player that controls the bot again -
+    // makes the dismissal over.
+    if (me->GetPet())
+    {
+        m_petDismissedForDrop = false;
+        return;
+    }
+
+    if (me->IsMounted() || me->IsTaxiFlying())
+        return;
+
+    // A pet is called to where its master stands, so the bot that has not come down keeps it dismissed: called at
+    // the top of the ledge it would stand there again. A bot that must fight calls its pet to where it is.
+    if (!me->IsInCombat() && me->GetPositionZ() > m_dropLandingZ + PB_DROP_LAND_TOLERANCE)
+        return;
+
+    me->ResummonPetTemporaryUnSummonedIfAny();
+    m_petDismissedForDrop = false;
 }
 
 // How a party bot that died outside a battleground comes back: the group must raise it with a resurrection
@@ -1042,6 +1180,13 @@ void PartyBotAI::UpdateAI(uint32 const diff)
             me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
     }
 
+    // The leader that has jumped down over an edge is followed over it, and the pet that was sent away for the
+    // drop is called back once the bot stands on the ground below again.
+    if (!me->IsInCombat() && !pVictim)
+        FollowLeaderDownTheDrop(pLeader);
+
+    CallPetBackAfterTheDrop();
+
     if (!me->IsMoving())
     {
         if (!pVictim)
@@ -1696,7 +1841,9 @@ void PartyBotAI::UpdateOutOfCombatAI_Hunter()
 
         UpdateInCombatAI_Hunter();
     }
-    else
+    // A pet is called to where its master stands, so a bot that has dismissed it for a drop and has not come down
+    // yet keeps it dismissed; it is called back below the ledge, see CallPetBackAfterTheDrop().
+    else if (!m_petDismissedForDrop)
         SummonPetIfNeeded();
 }
 
@@ -2378,7 +2525,8 @@ void PartyBotAI::UpdateOutOfCombatAI_Warlock()
 
         UpdateInCombatAI_Warlock();
     }
-    else
+    // The pet of a bot that is coming down over a ledge stays dismissed, as it is for the hunter above.
+    else if (!m_petDismissedForDrop)
         SummonPetIfNeeded();
 }
 

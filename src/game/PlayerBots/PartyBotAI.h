@@ -70,6 +70,8 @@ public:
     bool RunAwayFromTarget(Unit* pEnemy);
     bool CrowdControlMarkedTargets();
     bool EnterCombatDruidForm();
+    bool FollowLeaderDownTheDrop(Player* pLeader);
+    void CallPetBackAfterTheDrop();
     bool ShouldEnterStealth() const;
     bool EnterStealthIfNeeded(SpellEntry const* pStealthSpell);
 
@@ -110,6 +112,8 @@ public:
     float m_z = 0.0f;
     float m_o = 0.0f;
     bool m_resetSpellData = false;
+    bool m_petDismissedForDrop = false;
+    float m_dropLandingZ = 0.0f;
 };
 
 #endif

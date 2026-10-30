@@ -115,6 +115,22 @@ document and the code in step - it is what the maintainer reads to tune the valu
    under the rules that stop a spell. A party does not ride on the mount of its leader: a bot of `PartyBotAI` gets on
    a mount while the leader is mounted and gets off when the leader gets off, and one that has nothing of its own to
    ride stays on foot.
+11. A party that goes down over a ledge goes down together, because the leader of a party is a player that jumps.
+   `PartyBotAI::FollowLeaderDownTheDrop()` is for the bot that the pathfinder of the follow generator has stopped at
+   the edge while its leader waits below it. The ledge is the height difference and the distance of
+   `PB_DROP_MIN_Z_DIFF` and `PB_DROP_MAX_DIST` in `PartyBotAI.cpp`: what is lower than the first is a slope that the
+   follow generator walks down as it always does, and what is deeper than the second is a drop that the bot had
+   better look for a way around for, as the follow generator does on its own. The place to land is looked for along
+   the line from the bot to its leader and the one nearest the leader is taken, of the places where the ground really
+   is lower and where the way over the edge is free, so an overhang sends the bot around rather than into the rock.
+   The fall itself is a `MovePoint()` with `MOVE_FALLING` and without pathfinding, which is the movement that the
+   gravity of the client moves; there is no path over an edge to be found, and a path would lead the bot back up to
+   the edge. The pet of the bot is dismissed for the drop, because a pet that is called at the top of a ledge stands
+   there until its master walks back for it: the bot calls it back with `Player::ResummonPetTemporaryUnSummonedIfAny()`
+   once it stands on the ground that it aimed for, and while it waits above the ledge the updates of the hunter and of
+   the warlock are held from summoning it again, since a pet is called to where its master stands. A bot that must
+   fight calls its pet where it is. A bot that rides, a leader that rides, and a pair that stands on different
+   transports are left out of all of this.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
