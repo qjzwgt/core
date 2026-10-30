@@ -27,7 +27,10 @@
 #include "SpellAuras.h"
 #include "Chat.h"
 #include "Utilities/Random.h"
+#include "Corpse.h"
+#include "PathFinder.h"
 
+#include <ctime>
 #include <random>
 
 enum PartyBotSpells
@@ -263,6 +266,126 @@ bool PartyBotAI::ShouldAutoRevive() const
     }
 
     return alivePlayerNearby;
+}
+
+// True when a member of the group is to be counted on to raise the bot. The class of the member is not the
+// question: a priest has Resurrection and a shaman Ancestral Spirit, a paladin has Redemption only where its
+// talents give the talent, and a warrior has nothing at all. The resurrection spells are the ones with the
+// resurrect effect, which is also how PopulateSpellData() finds the spell with which the bot itself would raise
+// someone. Rebirth is not one of them for this: a druid keeps it for an emergency behind a long cooldown and a
+// reagent, so a group whose only resurrection is that one must not keep the bot standing by its body.
+bool PartyBotAI::GroupHasResurrection() const
+{
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return false;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        // A member that is dead can not cast, and the bot can not raise itself.
+        if (!pMember || pMember == me || !pMember->IsAlive())
+            continue;
+
+        for (auto const& spell : pMember->GetSpellMap())
+        {
+            if (!spell.second.active || spell.second.disabled)
+                continue;
+
+            SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(spell.first);
+            if (!pSpellEntry)
+                continue;
+
+            for (uint32 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                if (pSpellEntry->Effect[i] != SPELL_EFFECT_RESURRECT &&
+                    pSpellEntry->Effect[i] != SPELL_EFFECT_RESURRECT_NEW)
+                    continue;
+
+                // Rebirth, of which the trainer lists five ranks between 20485 and 20750, is the one resurrection
+                // that the core marks with SPELL_ATTR_EX3_NO_RES_TIMER (see the note in SpellDefines.h), so the
+                // attribute finds every rank of every patch where a spell id would find one.
+                if (pSpellEntry->HasAttribute(SPELL_ATTR_EX3_NO_RES_TIMER))
+                    continue;
+
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+// Walk the spirit of the bot to the bones it left behind, and let the spirit healer of its graveyard raise it
+// when the bones are out of reach.
+void PartyBotAI::WalkToCorpse(Corpse* pCorpse)
+{
+    // A point movement that has been launched walks on its own, so it is launched again only once it is over.
+    if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+        return;
+
+    float const x = pCorpse->GetPositionX();
+    float const y = pCorpse->GetPositionY();
+    float const z = pCorpse->GetPositionZ();
+
+    bool const reachable = pCorpse->GetMapId() == me->GetMapId() && pCorpse->GetInstanceId() == me->GetInstanceId();
+    if (reachable)
+    {
+        // The path is asked for before the walk because a spline without one would walk through the geometry.
+        PathFinder path(me);
+        path.calculate(x, y, z);
+
+        if (!(path.getPathType() & PATHFIND_NOPATH))
+        {
+            me->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING);
+            return;
+        }
+    }
+
+    if (WorldSession* pSession = me->GetSession())
+        pSession->SendSpiritResurrect();
+}
+
+// How a party bot that died outside a battleground comes back: the group must raise it with a resurrection
+// spell, or the bot must do what a player does - release the body, go to the graveyard as a spirit, and walk back
+// to the bones to take the body back.
+void PartyBotAI::UpdateSpiritResurrection()
+{
+    // The body is not released yet: the spirit still stands beside it. As long as a member of the group that is
+    // alive is to be counted on to raise the bot, the bot waits for that spell, the way a player that died with a
+    // priest in its group does. Where nobody is to be counted on the body is released at once; outside an instance
+    // the release timer of a player, which the core runs for the bot too, releases it when it runs out instead.
+    // BuildPlayerRepop() is what makes the bot a ghost, so it is asked only once.
+    if (me->GetDeathState() != DEAD)
+    {
+        if (GroupHasResurrection())
+            return;
+
+        me->BuildPlayerRepop();
+        me->RepopAtGraveyard();
+        return;
+    }
+
+    Corpse* pCorpse = me->GetCorpse();
+    if (!pCorpse)
+    {
+        // The bones are gone, so there is nothing to walk back to and the spirit healer raises the bot.
+        if (WorldSession* pSession = me->GetSession())
+            pSession->SendSpiritResurrect();
+        return;
+    }
+
+    // Taking ones own body back follows the same rules as for a player, see WorldSession::HandleReclaimCorpseOpcode:
+    // the spirit must stand by the bones, and the body must have lain there long enough to be worth taking.
+    if (pCorpse->IsWithinDistInMap(me, CORPSE_RECLAIM_RADIUS, true) &&
+        pCorpse->GetGhostTime() + me->GetCorpseReclaimDelay(pCorpse->GetType() == CORPSE_RESURRECTABLE_PVP) <= time(nullptr))
+    {
+        me->ResurrectPlayer(0.5f);
+        me->SpawnCorpseBones();
+        return;
+    }
+
+    WalkToCorpse(pCorpse);
 }
 
 bool PartyBotAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const
@@ -742,6 +865,10 @@ void PartyBotAI::UpdateAI(uint32 const diff)
                 me->RepopAtGraveyard();
             }
         }
+        // A bot that is not in a battleground comes back on its own as soon as a player stands by its corpse,
+        // unless PartyBot.SpiritResurrection asks for the way a player comes back instead.
+        else if (sWorld.getConfig(CONFIG_BOOL_PARTY_BOT_SPIRIT_RESURRECTION))
+            UpdateSpiritResurrection();
         else
         {
             if (ShouldAutoRevive())

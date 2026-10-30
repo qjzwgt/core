@@ -3208,6 +3208,17 @@ AHBot.itemcount = 50
 #        Default: 0 (restricted)
 #                 1 (no restrictions)
 #
+#    PartyBot.SpiritResurrection
+#        How a party bot that has died outside a battleground comes back to life.
+#        Default: 0 (the bot raises itself as soon as a player stands near its corpse)
+#                 1 (the bot keeps its body and waits to be raised for as long as a living member of its group
+#                     can be counted on to raise it, that is a member that knows a resurrection spell, the
+#                     Rebirth of a druid not counted because a player keeps that one for an emergency. Where
+#                     nobody can be counted on the bot releases its body at once, and outside an instance the
+#                     release timer of a player releases it when it runs out; the spirit then walks back to the
+#                     bones to take the body back, and the spirit healer raises it where the bones are out of
+#                     reach)
+#
 #    PartyBot.AutoEquip
 #        What gear will new partybots spawn with.
 #        Default: 1 (random items)
@@ -3244,6 +3255,7 @@ PlayerBot.ShowInWhoList = 0
 
 PartyBot.MaxBots = 0
 PartyBot.SkipChecks = 0
+PartyBot.SpiritResurrection = 0
 PartyBot.AutoEquip = 1
 PartyBot.RandomGearLevelDifference = 10
 

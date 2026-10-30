@@ -21,6 +21,8 @@
 #include "Group.h"
 #include "ObjectAccessor.h"
 
+class Corpse;
+
 class PartyBotAI : public CombatBotBaseAI
 {
 public:
@@ -60,6 +62,9 @@ public:
     bool CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const;
     bool DrinkAndEat();
     bool ShouldAutoRevive() const;
+    bool GroupHasResurrection() const;
+    void UpdateSpiritResurrection();
+    void WalkToCorpse(Corpse* pCorpse);
     bool IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy);
     Unit* GetDistancingTarget(Unit* pEnemy);
     bool RunAwayFromTarget(Unit* pEnemy);

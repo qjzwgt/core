@@ -58,6 +58,23 @@ document and the code in step - it is what the maintainer reads to tune the valu
 7. The stat weights (the "1% of hit or critical strike is worth 20 points" table in `defaultGearStatWeights`) are
    a starting point that the maintainer tunes by playing. A weight that looks wrong is data to report, not a bug
    to fix silently.
+8. `PartyBot.SpiritResurrection`, off by default, says how a party bot that died outside a battleground comes
+   back. Off, the bot raises itself as soon as a player of the group stands by its corpse, which is what upstream
+   does. On, the bot stays by its unreleased body and waits to be raised while a living member of the group is to
+   be counted on to raise it: one that knows a spell with the resurrect effect, which is the test that
+   `PopulateSpellData()` uses too, Rebirth excepted - a druid keeps Rebirth for an emergency, and it is the one
+   resurrection that the core marks with `SPELL_ATTR_EX3_NO_RES_TIMER`, which is how it is recognised here rather
+   than by the ids of its five ranks. A group whose only resurrection is a Rebirth does not hold the bot either:
+   the bot releases its body, and a resurrection wants a body that is still there, so the druid that knows nothing
+   else than Rebirth - a bot druid, whose `m_resurrectionSpell` that is - no longer has the bot as a target. That
+   is decided and accepted, Rebirth stays for the emergency it is meant for. Where nobody is to be counted on the
+   body is released at once; outside an instance the release timer that the core gives a player releases it after
+   six minutes, which is wanted - that is what a player who is left waiting does. The spirit then walks back to its
+   bones and takes the body back under the rules of `WorldSession::HandleReclaimCorpseOpcode`; a spirit whose
+   bones are in another copy of the map, or that no path reaches, is raised by the spirit healer through
+   `WorldSession::SendSpiritResurrect`. Neither of those paths applies the 2479 that the self-raising one does.
+   The soulstone, the Twisting Nether and the Reincarnation of a bot stay with the core's own
+   `Player::SelectResurrectionSpellId()`.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
