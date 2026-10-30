@@ -590,36 +590,43 @@ bool Player::StoreNewItemInBestSlots(uint32 itemId, uint32 amount, uint32 enchan
         if (msg != EQUIP_ERR_OK)
             break;
 
-        if (Item* pItem = EquipNewItem(eDest, itemId, true))
+        // The property and the enchantment go on the item before the item is equipped. Equipping applies the mods
+        // of an item and writes the item into the fields of the equipment of the player, and both of them read
+        // the item as it is at that moment. Those fields are all that another player sees of an item worn by
+        // this one, its suffix and the attributes of that suffix included, so a property set after the equip
+        // leaves an item that shows no attributes to the one who looks at the player.
+        Item* pItem = Item::CreateItem(itemId, 1, GetObjectGuid());
+        if (!pItem)
         {
-            bool needReApplyItemMods = false;
-            if (enchantId)
-            {
-                pItem->ClearEnchantment(PERM_ENCHANTMENT_SLOT);
-                pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0);
-                needReApplyItemMods = true;
-            }
-            if (uint32 randomPropertyId = Item::GenerateItemRandomPropertyId(itemId))
-            {
-                pItem->SetItemRandomProperties(randomPropertyId);
-                needReApplyItemMods = true;
-            }
-            // Since the item is enchanted after it is equipped, item mods need to be re-applied.
-            if (needReApplyItemMods)
-            {
-                uint8 slot = eDest & 255;
-                _ApplyItemMods(pItem, slot, false);
-                _ApplyItemMods(pItem, slot, true);
-            }
+            --amount;
+            continue;
+        }
 
-            AutoUnequipOffhandIfNeed();
+        ItemAddedQuestCheck(itemId, 1);
 
-            if ((amount > 1) && (amount <= pItem->GetProto()->GetMaxStackSize()))
-            {
-                pItem->SetCount(amount);
-                amount = 0;
-                break;
-            }
+        if (enchantId)
+        {
+            pItem->ClearEnchantment(PERM_ENCHANTMENT_SLOT);
+            pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0);
+        }
+
+        if (uint32 randomPropertyId = Item::GenerateItemRandomPropertyId(itemId))
+            pItem->SetItemRandomProperties(randomPropertyId);
+
+        pItem = EquipItem(eDest, pItem, true);
+        if (!pItem)
+        {
+            --amount;
+            continue;
+        }
+
+        AutoUnequipOffhandIfNeed();
+
+        if ((amount > 1) && (amount <= pItem->GetProto()->GetMaxStackSize()))
+        {
+            pItem->SetCount(amount);
+            amount = 0;
+            break;
         }
 
         --amount;

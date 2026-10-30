@@ -2862,6 +2862,23 @@ bool CombatBotBaseAI::PrepareDualWield()
 // got at its level, and rate every item by the attributes that it gives to that talent.
 void CombatBotBaseAI::EquipRandomGearInEmptySlots()
 {
+    // A bot that was dressed while the property of an item was still put on it after the item was equipped wears
+    // an item of a property group without any property: an item that no player owns, that gives the bot nothing
+    // that the rating of it counted, and that shows no attributes to the one who looks at the bot. Take such an
+    // item off; the slot is empty again, and the filling below dresses it with the item and with the property
+    // that belong to it.
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        Item* pWornItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!pWornItem || !pWornItem->GetProto() || !pWornItem->GetProto()->RandomProperty)
+            continue;
+
+        if (pWornItem->GetItemRandomPropertyId() > 0)
+            continue;
+
+        me->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+    }
+
     LearnArmorProficiencies();
 
     bool const canDualWield = PrepareDualWield();

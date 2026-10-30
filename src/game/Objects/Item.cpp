@@ -830,6 +830,17 @@ void Item::SetItemRandomProperties(int32 randomPropId)
             }
             for (uint32 i = PROP_ENCHANTMENT_SLOT_0; i < PROP_ENCHANTMENT_SLOT_0 + 3; ++i)
                 SetEnchantment(EnchantmentSlot(i), item_rand->enchant_id[i - PROP_ENCHANTMENT_SLOT_0], 0, 0);
+
+            // A worn item is in the fields that another player has of the equipment of its owner, and those
+            // fields say the property of the item as it was when the item was equipped. A property put on a
+            // worn item has to be written there as well, or the one who looks at the owner sees an item without
+            // its suffix and without the attributes of that suffix. The mods of the item are not touched here,
+            // which is why a property belongs on an item before that item is equipped.
+            if (IsEquipped())
+            {
+                if (Player* owner = GetOwner())
+                    owner->SetVisibleItemSlot(GetSlot(), this);
+            }
         }
     }
 }

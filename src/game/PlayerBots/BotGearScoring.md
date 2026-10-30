@@ -196,7 +196,16 @@ named there, where a row can be named, and not at the thousands of items that us
 slot. Equipping is what applies the mods of an item, and what writes the item into the visible fields of the
 equipment of the player - and those fields are all that another player sees of an item worn by a bot, its suffix and
 the attributes of that suffix included. A property set after the item is equipped therefore leaves the bot wearing an
-item that shows no attributes to the one who looks at it, however right the rating of that property was.
+item that shows no attributes to the one who looks at it, however right the rating of that property was. The same
+order is kept in `Player::StoreNewItemInBestSlots()` itself, which is how the gear that a bot copies from a player
+and the gear of a premade template are worn with their suffix, and `Item::SetItemRandomProperties()` asks the owner
+to write that slot of the equipment again when a property goes on an item that is worn already - the mods of a worn
+item are not touched there, so the order is still what the rating has to keep.
+
+The bots that were dressed before that order was fixed wear, until they are dressed again, an item of a property
+group without any property: the property of those items was never written in `item_instance`, so no reading of a
+saved item can give it back. `EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots, and
+the slot is dressed again with the item and with the property that belong to it.
 
 This is also why the weapon slots are filled after the armour: the item that goes in one hand depends on the item
 that goes in the other.

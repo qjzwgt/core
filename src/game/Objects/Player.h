@@ -872,7 +872,6 @@ class Player final: public Unit
         bool CheckAmmoCompatibility(ItemPrototype const* ammo_proto) const;
         void QuickEquipItem(uint16 pos, Item* pItem);
         void VisualizeItem(uint8 slot, Item* pItem);
-        void SetVisibleItemSlot(uint8 slot, Item const* pItem);
         // in trade, guild bank, mail....
         void RemoveItemDependentAurasAndCasts(Item const* pItem);
         void UpdateEnchantTime(uint32 time);
@@ -952,6 +951,10 @@ class Player final: public Unit
         // equipment slots of the bots one by one when the position of the items of one slot depends on the others
         bool StoreNewItemInSlot(uint8 slot, uint32 itemId, int32 randomPropertyId);
         Item* StoreNewItemInInventorySlot(uint32 itemId, uint32 amount);
+        // Writes the entry, the enchantments and the random property of one worn item into the fields of the
+        // equipment of the player, which are what another player sees of that item. `Item` asks for it when a
+        // property goes on an item that is worn already, so that those fields never say less than the item is.
+        void SetVisibleItemSlot(uint8 slot, Item const* pItem);
         void AutoStoreLoot(Loot& loot, bool broadcast = false, uint8 bag = NULL_BAG, uint8 slot = NULL_SLOT);
         void SetAmmo(uint32 item);
         void RemoveAmmo();

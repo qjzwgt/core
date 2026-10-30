@@ -49,10 +49,16 @@ document and the code in step - it is what the maintainer reads to tune the valu
    bot wears, its suffix and the attributes of that suffix included; a property set after the equip leaves an item
    that shows no attributes to the one who looks at the bot. That is why `Player::StoreNewItemInSlot()` exists:
    `Player::StoreNewItemInBestSlots()` rolls another property, so the bot would wear something other than what
-   was rated. Naming 野熊 / 雄鹰 / 灵猴 / 猛虎 per role is not needed - the scoring picks the best of the group of
-   that item where the group has one of them. An item of a group always wears one of its properties: when none of
-   them gives an attribute that the talent values, the property that the creation of the item for a player would
-   roll is taken, because an item without its suffix is an item that does not exist.
+   was rated; that helper keeps the same order itself now, which is what puts the suffix on the gear that a bot
+   copies from a player and on the gear of a premade template. `Item::SetItemRandomProperties()` writes that slot
+   of the equipment again when a property goes on an item that is worn already, so those fields never say less than
+   the item is; the mods of a worn item are not touched there, so the order stays the thing to get right. A bot
+   dressed before the order was fixed wears an item whose property was never written in `item_instance`, and
+   `EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots. Naming 野熊 / 雄鹰 / 灵猴 /
+   猛虎 per role is not needed - the scoring picks the best of the group of that item where the group has one of
+   them. An item of a group always wears one of its properties: when none of them gives an attribute that the
+   talent values, the property that the creation of the item for a player would roll is taken, because an item
+   without its suffix is an item that does not exist.
 6. The whole set wears at most one copy of any item entry, whether the item is flagged unique or not, because
    quest rewards that are not flagged unique would otherwise be worn twice.
 7. The stat weights (the "1% of hit or critical strike is worth 20 points" table in `defaultGearStatWeights`) are
