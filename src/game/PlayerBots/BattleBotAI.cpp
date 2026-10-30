@@ -35,8 +35,6 @@
 
 enum BattleBotSpells
 {
-    BB_SPELL_FOOD = 1131,
-    BB_SPELL_DRINK = 1137,
     BB_SPELL_AUTO_SHOT = 75,
     BB_SPELL_SHOOT_WAND = 5019,
 
@@ -181,6 +179,13 @@ bool BattleBotAI::DrinkAndEat()
     if (me->GetVictim())
         return false;
 
+    // A player that is nearly whole does not sit down: the food and the water are for the health and the mana that
+    // have gone far enough down to be worth the time that eating takes.
+    bool const enoughHealth = me->GetHealthPercent() >= 80.0f;
+    bool const enoughMana = me->GetPowerType() != POWER_MANA || me->GetPowerPercent(POWER_MANA) >= 70.0f;
+    if (enoughHealth && enoughMana)
+        return false;
+
     BattleGround* bg;
     bool const needToEat = me->GetHealthPercent() < 100.0f && !((bg = me->GetBattleGround()) && bg->GetStatus() == STATUS_WAIT_JOIN);
     bool const needToDrink = (me->GetPowerType() == POWER_MANA) && (me->GetPowerPercent(POWER_MANA) < 100.0f);
@@ -193,8 +198,27 @@ bool BattleBotAI::DrinkAndEat()
         me->HasAura(AURA_SILVERWING_FLAG))
         return false;
 
-    bool const isEating = me->HasAura(BB_SPELL_FOOD);
-    bool const isDrinking = me->HasAura(BB_SPELL_DRINK);
+    // A bot that has lost a lot of its health puts a bandage on first, which is what a player does in a battleground
+    // as much as anywhere else, and it takes the food and the water only when its first aid has no bandage ready.
+    if (me->GetHealthPercent() < 50.0f)
+    {
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType())
+        {
+            ClearPath();
+            StopMoving();
+        }
+
+        if (BandageSelf())
+            return true;
+    }
+
+    // The rank of the food and of the water is that of the level of the bot, as it is for a player, whose vendors
+    // sell the victuals of the region it is adventuring in.
+    uint32 const foodSpell = GetFoodSpellId();
+    uint32 const waterSpell = GetDrinkSpellId();
+
+    bool const isEating = me->HasAura(foodSpell);
+    bool const isDrinking = me->HasAura(waterSpell);
 
     if (!isEating && needToEat)
     {
@@ -203,7 +227,7 @@ bool BattleBotAI::DrinkAndEat()
             ClearPath();
             StopMoving();
         }
-        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(BB_SPELL_FOOD))
+        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(foodSpell))
         {
             me->CastSpell(me, pSpellEntry, true);
             me->RemoveSpellCooldown(pSpellEntry);
@@ -218,7 +242,7 @@ bool BattleBotAI::DrinkAndEat()
             ClearPath();
             StopMoving();
         }
-        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(BB_SPELL_DRINK))
+        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(waterSpell))
         {
             me->CastSpell(me, pSpellEntry, true);
             me->RemoveSpellCooldown(pSpellEntry);

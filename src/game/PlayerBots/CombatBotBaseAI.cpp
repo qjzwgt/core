@@ -3464,6 +3464,188 @@ bool CombatBotBaseAI::UseItemEffect(Item* pItem, bool onlyToBreakCC)
     return false;
 }
 
+namespace
+{
+    // A player carries the bandages that its first aid has the rank for: first aid is the secondary skill that a
+    // player learns at level 10 and that it ranks up as it goes, and every bandage says in its `required_skill_rank`
+    // which rank of that skill the bandage asks for. The levels below are where the first aid of a player that
+    // adventures has commonly reached that rank, and they are the level at which a bot is given the bandage of the
+    // tier. The bandages of the tribal lands (Wool Bandage and Heavy Wool Bandage) ask the ranks of the linen ones
+    // and heal the same, and the bandages of the battlegrounds are carried only inside one, so none of those belong
+    // here.
+    struct BandageTier
+    {
+        uint8 level;
+        uint32 itemEntry;
+    };
+
+    BandageTier const bandageTiers[] =
+    {
+        { 10, 1251 },      // Linen Bandage, first aid 1
+        { 20, 2581 },      // Heavy Linen Bandage, first aid 20
+        { 28, 6450 },      // Silk Bandage, first aid 100
+        { 33, 6451 },      // Heavy Silk Bandage, first aid 125
+        { 38, 8544 },      // Mageweave Bandage, first aid 150
+        { 43, 8545 },      // Heavy Mageweave Bandage, first aid 175
+        { 48, 14529 },     // Runecloth Bandage, first aid 200
+        { 54, 14530 },     // Heavy Runecloth Bandage, first aid 225
+    };
+
+    // The victuals that a player eats are of the level that it is adventuring at, and so are the spells behind
+    // them: every rank of the generic "Food" and "Drink" spells is the use spell of the victuals of one level band,
+    // and the item that carries the rank says the level by its own `required_level`. The ranks are named here by the
+    // victuals that carry them, with the level those victuals ask for, so that a table can be checked against the
+    // item prototypes without guessing what a spell id was meant for.
+    struct RecoveryTier
+    {
+        uint8 level;
+        uint32 spellId;
+    };
+
+    // "Food": Tough Jerky and Slitherskin Mackerel (level 1), Dalaran Sharp and Conjured Bread (5), Succulent Pork
+    // Ribs and Dwarven Mild (10, 15), Stormwind Brie and Wild Hog Shank (25), Fine Aged Cheddar (35), and Alterac
+    // Swiss and Dried King Bolete (45). A level 20 character that ate the food of the last rank would be filled by
+    // one sitting several times over, which is what no player of that level has in its bags.
+    RecoveryTier const foodTiers[] =
+    {
+        {  1,  433 },      // 61 health over 18 sec
+        {  5,  434 },      // 243 health over 21 sec
+        { 15,  435 },      // 552 health over 24 sec
+        { 25, 1127 },      // 874 health over 27 sec
+        { 35, 1129 },      // 1392 health over 30 sec
+        { 45, 1131 },      // 2148 health over 30 sec
+    };
+
+    // "Drink": Refreshing Spring Water (level 1), Ice Cold Milk (5), Melon Juice (15), Sweet Nectar (25), Moonberry
+    // Juice (35), and Morning Glory Dew (45). The water of the last rank is what the bots of a battleground drink,
+    // where every player is at the maximum level.
+    RecoveryTier const drinkTiers[] =
+    {
+        {  1,  430 },      // 151 mana over 18 sec
+        {  5,  431 },      // 436 mana over 21 sec
+        { 15,  432 },      // 835 mana over 24 sec
+        { 25, 1133 },      // 1344 mana over 27 sec
+        { 35, 1135 },      // 1992 mana over 30 sec
+        { 45, 1137 },      // 2934 mana over 30 sec
+    };
+
+    // The highest rank of the table that a character of this level buys. A rank whose spell the Spell.dbc of the
+    // running patch does not have is passed over, which leaves the rank of the patches before. The rank that the
+    // core knows to be food or drink - Spells::GetSpellSpecific() reads the seated requirement and the health or the
+    // mana that comes back over time - wins over one that it does not, which keeps a rank out of the way when an id
+    // means something else in a patch; a rank that the core does not name is still used, because a bot that never
+    // sits down to eat is the worse outcome.
+    template <size_t TIER_COUNT>
+    uint32 GetHighestRecoverySpell(uint8 level, RecoveryTier const (&tiers)[TIER_COUNT], SpellSpecific specific)
+    {
+        uint32 unnamedRank = 0;
+
+        for (size_t i = TIER_COUNT; i > 0; --i)
+        {
+            if (level < tiers[i - 1].level || !sSpellMgr.GetSpellEntry(tiers[i - 1].spellId))
+                continue;
+
+            if (Spells::GetSpellSpecific(tiers[i - 1].spellId) == specific)
+                return tiers[i - 1].spellId;
+
+            if (!unnamedRank)
+                unnamedRank = tiers[i - 1].spellId;
+        }
+
+        return unnamedRank;
+    }
+}
+
+// The bandage that a bot of this level carries, nothing when the bot is too young to have learned first aid.
+uint32 CombatBotBaseAI::GetBandageItemEntry() const
+{
+    uint32 itemEntry = 0;
+    for (BandageTier const& tier : bandageTiers)
+        if (me->GetLevel() >= tier.level)
+            itemEntry = tier.itemEntry;
+
+    return itemEntry;
+}
+
+// The food of the level of the bot, nothing when the patch has no rank that it may eat.
+uint32 CombatBotBaseAI::GetFoodSpellId() const
+{
+    return GetHighestRecoverySpell(me->GetLevel(), foodTiers, SPELL_FOOD);
+}
+
+// The water of the level of the bot, nothing when the patch has no rank that it may drink.
+uint32 CombatBotBaseAI::GetDrinkSpellId() const
+{
+    return GetHighestRecoverySpell(me->GetLevel(), drinkTiers, SPELL_DRINK);
+}
+
+// The best bandage that the bot carries. The bandages are the consumables whose use asks the first aid skill, which
+// tells them from every other item of the bags without naming one of them.
+Item* CombatBotBaseAI::GetBandageItem() const
+{
+    Item* pBestItem = nullptr;
+    for (int i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; ++i)
+    {
+        Item* pItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, i);
+        if (!pItem)
+            continue;
+
+        ItemPrototype const* pProto = pItem->GetProto();
+        if (pProto->Class != ITEM_CLASS_CONSUMABLE || pProto->RequiredSkill != SKILL_FIRST_AID)
+            continue;
+
+        if (!pBestItem || pBestItem->GetProto()->RequiredSkillRank < pProto->RequiredSkillRank)
+            pBestItem = pItem;
+    }
+
+    return pBestItem;
+}
+
+// A player that has lost a lot of its health puts a bandage on before it thinks of sitting down, and it can not put
+// a second one on while one is working or while the cooldown of the bandages runs. The stack of the bandage of its
+// level is put in the bags of the bot when the bags have none, as the ammo of a hunter is put in the quiver when the
+// quiver is empty.
+bool CombatBotBaseAI::BandageSelf()
+{
+    Item* pItem = GetBandageItem();
+    if (!pItem)
+    {
+        uint32 const itemEntry = GetBandageItemEntry();
+        if (!itemEntry)
+            return false;
+
+        ItemPrototype const* pBandageProto = sObjectMgr.GetItemPrototype(itemEntry);
+        if (!pBandageProto)
+            return false;
+
+        AddItemToInventory(itemEntry, pBandageProto->GetMaxStackSize());
+        pItem = GetBandageItem();
+        if (!pItem)
+            return false;
+    }
+
+    ItemPrototype const* pProto = pItem->GetProto();
+    for (auto const& itr : pProto->Spells)
+    {
+        if (!itr.SpellId || itr.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
+            continue;
+
+        SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(itr.SpellId);
+        if (!pSpellEntry)
+            continue;
+
+        if (!me->IsSpellReady(pSpellEntry, pProto) || me->HasAura(pSpellEntry->Id))
+            continue;
+
+        SpellCastTargets targets;
+        targets.setUnitTarget(me);
+        me->CastItemUseSpell(pItem, targets);
+        return true;
+    }
+
+    return false;
+}
+
 void CombatBotBaseAI::BreakCrowdControlEffects()
 {
     if (UseTrinketEffects(true))

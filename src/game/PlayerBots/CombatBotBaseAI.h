@@ -147,6 +147,11 @@ public:
     void EquipOrUseNewItem();
     void AddItemToInventory(uint32 itemId, uint32 count = 1);
     void AddHunterAmmo();
+    uint32 GetBandageItemEntry() const;
+    Item* GetBandageItem() const;
+    bool BandageSelf();
+    uint32 GetFoodSpellId() const;
+    uint32 GetDrinkSpellId() const;
     uint8 GetHighestHonorRankFromEquippedItems() const;
     void UpdateVisualHonorRankBasedOnItems();
     void BeginChasing(Unit* pVictim) const;

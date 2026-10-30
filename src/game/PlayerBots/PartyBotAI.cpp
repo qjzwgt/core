@@ -35,8 +35,6 @@
 
 enum PartyBotSpells
 {
-    PB_SPELL_FOOD = 1131,
-    PB_SPELL_DRINK = 1137,
     PB_SPELL_AUTO_SHOT = 75,
     PB_SPELL_SHOOT_WAND = 5019,
     PB_SPELL_HONORLESS_TARGET = 2479,
@@ -193,14 +191,41 @@ bool PartyBotAI::DrinkAndEat()
     if (me->GetVictim())
         return false;
 
+    // A player that is nearly whole does not sit down: the food and the water are for the health and the mana that
+    // have gone far enough down to be worth the time that eating takes.
+    bool const enoughHealth = me->GetHealthPercent() >= 80.0f;
+    bool const enoughMana = me->GetPowerType() != POWER_MANA || me->GetPowerPercent(POWER_MANA) >= 70.0f;
+    if (enoughHealth && enoughMana)
+        return false;
+
     bool const needToEat = me->GetHealthPercent() < 100.0f;
     bool const needToDrink = (me->GetPowerType() == POWER_MANA) && (me->GetPowerPercent(POWER_MANA) < 100.0f);
 
     if (!needToEat && !needToDrink)
         return false;
 
-    bool const isEating = me->HasAura(PB_SPELL_FOOD);
-    bool const isDrinking = me->HasAura(PB_SPELL_DRINK);
+    // A bot that has lost a lot of its health puts a bandage on first, which is what a player does, and it takes the
+    // food and the water only when its first aid has no bandage ready.
+    if (me->GetHealthPercent() < 50.0f)
+    {
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType())
+        {
+            me->StopMoving();
+            me->GetMotionMaster()->Clear(false, true);
+            me->GetMotionMaster()->MoveIdle();
+        }
+
+        if (BandageSelf())
+            return true;
+    }
+
+    // The rank of the food and of the water is that of the level of the bot, as it is for a player, whose vendors
+    // sell the victuals of the region it is adventuring in.
+    uint32 const foodSpell = GetFoodSpellId();
+    uint32 const waterSpell = GetDrinkSpellId();
+
+    bool const isEating = me->HasAura(foodSpell);
+    bool const isDrinking = me->HasAura(waterSpell);
 
     if (!isEating && needToEat)
     {
@@ -210,7 +235,7 @@ bool PartyBotAI::DrinkAndEat()
             me->GetMotionMaster()->Clear(false, true);
             me->GetMotionMaster()->MoveIdle();
         }
-        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(PB_SPELL_FOOD))
+        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(foodSpell))
         {
             me->CastSpell(me, pSpellEntry, true);
             me->RemoveSpellCooldown(pSpellEntry);
@@ -226,7 +251,7 @@ bool PartyBotAI::DrinkAndEat()
             me->GetMotionMaster()->Clear(false, true);
             me->GetMotionMaster()->MoveIdle();
         }
-        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(PB_SPELL_DRINK))
+        if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(waterSpell))
         {
             me->CastSpell(me, pSpellEntry, true);
             me->RemoveSpellCooldown(pSpellEntry);

@@ -75,6 +75,22 @@ document and the code in step - it is what the maintainer reads to tune the valu
    `WorldSession::SendSpiritResurrect`. Neither of those paths applies the 2479 that the self-raising one does.
    The soulstone, the Twisting Nether and the Reincarnation of a bot stay with the core's own
    `Player::SelectResurrectionSpellId()`.
+9. The recovery of a bot that is out of combat follows a player. A bot sits down to eat and drink only once its
+   health has gone below 80% or its mana below 70%; a bot under 50% of its health puts a bandage on before it
+   thinks of food, and it goes on with the food and the water when its bandage is not ready. The food and the water
+   are cast as spells rather than taken out of the bags, but of the rank of the level of the bot: the ranks of the
+   generic "Food" and "Drink" spells are the tables `foodTiers` and `drinkTiers` of `CombatBotBaseAI.cpp`, keyed by
+   the level that the victuals carrying each rank ask for, which is what the vendors of a region of that level sell.
+   A rank whose spell the Spell.dbc of the running patch does not have is passed over, so a patch of a low maximum
+   level keeps the ranks that it has. The core sits down the one that eats and takes the buff away from a character
+   that stands up again (`AURA_INTERRUPT_STANDING_CANCELS`), so the update does not stand a bot up while it still
+   needs its meal, and a bot called into combat stops eating. The bandage is a real item, and its stack is put in
+   the bags of the bot when the bags have none, as the ammo of a hunter is put in the quiver. The bandage of a bot
+   is the tier whose first aid rank (`required_skill_rank` of the item) the first aid of a player of that level has
+   reached; those levels are the table `bandageTiers` of `CombatBotBaseAI.cpp`. The three tables are some of the few
+   places of this subsystem where item and spell ids are written in C++ - to tune the tiers means moving them into
+   `sql/custom/repack/`, not keeping a second list. A bot does not learn the first aid skill: the core checks the
+   `RequiredSkill` of an item when it loads the prototypes and never when the item is used.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
