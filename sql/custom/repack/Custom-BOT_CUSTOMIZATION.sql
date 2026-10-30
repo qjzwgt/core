@@ -96,12 +96,18 @@ CREATE TABLE IF NOT EXISTS `playerbot_talent_build` (
 -- when the step is a talent of another tree of that class, so the rows of one talent are read as one build.
 --
 -- A build is the 51 points of a level 60 character: 31 points in the primary tree, which is what the last talent
--- of a tree asks for, and 20 points in a second tree. The rows of a build are ordered the way the points are
--- spent, the primary tree from its first row down and then the second tree, so a bot that has not reached the
--- maximum level learns the first rows of the build of its talent and has the primary tree of that talent filled
--- before another tree is touched. The order of the rows also keeps the rule that a talent can not be taken before
--- the rows above it have enough points; the steps that the level of a bot can not reach yet are simply not learned,
--- which is what the points of that level add up to.
+-- of a tree asks for, and the 20 points that are left in a second tree. The rows of a build are ordered the way
+-- the points are spent, the primary tree from its first row down and then the second tree, so a bot that has not
+-- reached the maximum level learns the first rows of the build of its talent and has the primary tree of that
+-- talent filled before another tree is touched. The order of the rows also keeps the rule that a talent can not be
+-- taken before the rows above it have enough points; the steps that the level of a bot can not reach yet are
+-- simply not learned, which is what the points of that level add up to.
+--
+-- The ranks of one talent may be written in more than one step when a player of that talent takes some of them
+-- early and the rest at the last levels: `LearnTalentsFromBuild()` counts the ranks that the bot already has, so a
+-- later step of a talent that an earlier step took goes on from the rank that the bot stopped at. 狂暴战 below is
+-- written that way, since the last ranks of 双武器专精 are what a fury warrior leaves for its last levels, and one
+-- step for that talent would spend the points of thirty and odd levels on them too early.
 --
 -- The talent trees, the ranks of every talent and the spell ids of those ranks are the data of the talent
 -- calculator of https://classicdb.ch (a Wowhead engine; wowhead.com itself answers 403 to a plain request, and its
@@ -110,124 +116,188 @@ CREATE TABLE IF NOT EXISTS `playerbot_talent_build` (
 -- gear rating does not give it, the crowd control that only matters against players) are the ranks that are left
 -- out when the 31 points are counted.
 --
--- The build of a combat rogue puts all 51 points in one tree, because that is the talent that the tree teaches:
--- a rogue is rated by its class alone (`GEAR_SPEC_ROGUE`), so `.partybot add dz` only asks which tree to learn
--- and there is no second tree to give the extra points to. The steps of that build are ordered by row like the
--- others, and the last talent of its tree is taken as the 31st point as in the others, so a bot that has not
--- reached the maximum level has that talent too and spends the points that its level adds on the rows that are
--- left.
+-- A rogue is offered one build, the one of the combat talent: a rogue is rated by its class alone
+-- (`GEAR_SPEC_ROGUE`), so `.partybot add dz` names the talent of the bot without a second talent to choose
+-- between. Its steps are all keyed to talent page 1, the page of the combat talent, whatever tree the talent of a
+-- step is in, and its points go 31 into the combat tree and 20 into the assassination tree like the second tree of
+-- any other build.
 --
 -- The feral page of a druid is read as the cat by a melee damage role and as the bear by a tank role, so the two
 -- share one build until a build of its own is added for the bear.
 
 -- arms (武器战), class 1 warrior talent page 0: 51 points, primary tree Arms
+-- The steps are the order in which a 武器战 spends its points from level 10 to level 60, one rank per level: the
+-- 31 points of Arms up to 致死打击 (Mortal Strike) at level 40, then the 20 points of Fury (talent page 1) of the
+-- levels above it. The three weapon skill talents of the tree are in that order as the player of the talent takes
+-- them: 双手武器专精 (12163, of which the build of the talent takes three of the five ranks that the
+-- talent has), 斧专精 (12785) and 剑类武器专精 (12281).
 DELETE FROM `playerbot_talent_build` WHERE `class`=1 AND `talent_page`=0;
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 1, 12282, 3, 'Improved Heroic Strike');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 2, 16462, 5, 'Deflection');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 3, 12286, 3, 'Improved Rend');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 4, 12285, 2, 'Improved Charge');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 5, 12295, 5, 'Tactical Mastery');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 6, 12287, 3, 'Improved Thunder Clap');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 7, 12290, 2, 'Improved Overpower');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 8, 12296, 1, 'Anger Management');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 9, 12834, 3, 'Deep Wounds');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 10, 12163, 2, 'Two-Handed Weapon Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 11, 12292, 1, 'Sweeping Strikes');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 12, 12294, 1, 'Mortal Strike');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 1, 16462, 2, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 2, 12286, 3, 'Improved Rend');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 3, 12295, 5, 'Tactical Mastery');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 4, 12834, 3, 'Deep Wounds');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 5, 12290, 2, 'Improved Overpower');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 6, 16493, 2, 'Impale');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 7, 12163, 3, 'Two-Handed Weapon Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 8, 12292, 1, 'Sweeping Strikes');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 9, 12785, 5, 'Axe Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 10, 12281, 4, 'Sword Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 11, 12294, 1, 'Mortal Strike');
 --   then 20 points of Fury (talent page 1)
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 13, 12321, 5, 'Booming Voice');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 14, 12320, 5, 'Cruelty');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 15, 12322, 5, 'Unbridled Wrath');
-INSERT INTO `playerbot_talent_build` VALUES (1, 0, 16, 12318, 5, 'Improved Battle Shout');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 12, 12320, 5, 'Cruelty');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 13, 12322, 5, 'Unbridled Wrath');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 14, 12318, 5, 'Improved Battle Shout');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 15, 20502, 2, 'Improved Execute');
+INSERT INTO `playerbot_talent_build` VALUES (1, 0, 16, 12317, 3, 'Enrage');
 
 -- fury (狂暴战), class 1 warrior talent page 1: 51 points, primary tree Fury
+-- The steps are the order in which a fury warrior spends its points from level 10 to level 60, one rank per
+-- level: the 31 points of Fury up to 嗜血 (Bloodthirst) at level 40, the 17 points of Arms that the levels above
+-- it add, and the three ranks of 双武器专精 (Dual Wield Specialization) that are left at levels 58 to 60. The two
+-- ranks of that talent at levels 33 and 34 are what those levels ask for; its last three come with its last
+-- levels, so that a bot of forty has 乱舞 (Flurry) and 嗜血 rather than the last ranks of a two weapon talent.
 DELETE FROM `playerbot_talent_build` WHERE `class`=1 AND `talent_page`=1;
 INSERT INTO `playerbot_talent_build` VALUES (1, 1, 1, 12320, 5, 'Cruelty');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 2, 12324, 2, 'Improved Demoralizing Shout');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 3, 12322, 5, 'Unbridled Wrath');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 4, 12329, 3, 'Improved Cleave');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 5, 23584, 5, 'Dual Wield Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 6, 12317, 5, 'Enrage');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 7, 12862, 5, 'Improved Slam');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 8, 23881, 1, 'Bloodthirst');
---   then 20 points of Arms (talent page 0)
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 9, 16462, 5, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 2, 12322, 5, 'Unbridled Wrath');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 3, 12318, 5, 'Improved Battle Shout');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 4, 20502, 2, 'Improved Execute');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 5, 12317, 5, 'Enrage');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 6, 12328, 1, 'Death Wish');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 7, 23584, 2, 'Dual Wield Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 8, 12319, 5, 'Flurry');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 9, 23881, 1, 'Bloodthirst');
+--   then 17 points of Arms (talent page 0)
 INSERT INTO `playerbot_talent_build` VALUES (1, 1, 10, 12286, 3, 'Improved Rend');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 11, 12285, 2, 'Improved Charge');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 11, 16462, 2, 'Deflection');
 INSERT INTO `playerbot_talent_build` VALUES (1, 1, 12, 12295, 5, 'Tactical Mastery');
 INSERT INTO `playerbot_talent_build` VALUES (1, 1, 13, 12834, 3, 'Deep Wounds');
-INSERT INTO `playerbot_talent_build` VALUES (1, 1, 14, 16493, 2, 'Impale');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 14, 12290, 2, 'Improved Overpower');
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 15, 16493, 2, 'Impale');
+--   and the three ranks of Dual Wield Specialization that are left (talent page 1 again)
+INSERT INTO `playerbot_talent_build` VALUES (1, 1, 16, 23584, 3, 'Dual Wield Specialization');
 
 -- protection (防战), class 1 warrior talent page 2: 51 points, primary tree Protection
+-- The steps are the order in which a 防战 spends its points from level 10 to level 60, one rank per level: the
+-- 偏斜 (Deflection) and 战术掌握 (Tactical Mastery) of Arms and the 残忍 (Cruelty) of Fury first, since those
+-- are the ranks that its low levels ask for, then the Protection tree from 盾牌专精 (Shield Specialization) down
+-- to 盾牌猛击 (Shield Slam), and the five ranks of 强化挫志怒吼 (Improved Demoralizing Shout) of Fury last.
+-- Unlike the two builds above it, this one does not put 31 points in one tree: it is the order of a tank
+-- who plays with a shield, in which the ranks that a tank wants in a dungeon (挑衅 Defiance, 强化破甲攻击
+-- Improved Sunder Armor, 强化盾墙 Improved Shield Wall) are what the levels add and the deep talents of the
+-- tree come with the levels above them. 强化破甲攻击 is asked for at level 44 and again at levels 46 and 47,
+-- because a tank of that level wants its first rank and leaves the two others; `LearnTalentsFromBuild()`
+-- counts the ranks that the bot already has, so the second step goes on from the rank that the first one
+-- stopped at.
+-- A step of a deep talent of the tree comes between the ranks that the levels ask for, and the row that the
+-- talent stands in is not open yet at that moment. The walk over the steps asks for such a step again once the
+-- points that follow it are spent, so the bot learns it as soon as its tree reaches that row; the steps of a
+-- talent of another tree that the build never has the points of are the steps that it leaves out.
 DELETE FROM `playerbot_talent_build` WHERE `class`=1 AND `talent_page`=2;
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 1, 12298, 5, 'Shield Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 2, 12297, 5, 'Anticipation');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 3, 12301, 2, 'Improved Bloodrage');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 4, 12299, 5, 'Toughness');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 5, 12300, 4, 'Iron Will');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 6, 12308, 3, 'Improved Sunder Armor');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 7, 12302, 2, 'Improved Taunt');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 8, 12312, 2, 'Improved Shield Wall');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 9, 12311, 2, 'Improved Shield Bash');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 10, 23922, 1, 'Shield Slam');
---   then 20 points of Fury (talent page 1)
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 11, 12321, 5, 'Booming Voice');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 12, 12320, 5, 'Cruelty');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 13, 12322, 5, 'Unbridled Wrath');
-INSERT INTO `playerbot_talent_build` VALUES (1, 2, 14, 12318, 5, 'Improved Battle Shout');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 1, 16462, 5, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 2, 12295, 5, 'Tactical Mastery');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 3, 12320, 5, 'Cruelty');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 4, 12298, 5, 'Shield Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 5, 12301, 2, 'Improved Bloodrage');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 6, 12299, 3, 'Toughness');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 7, 12975, 1, 'Last Stand');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 8, 12307, 1, 'Improved Shield Block');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 9, 12303, 5, 'Defiance');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 10, 12302, 2, 'Improved Taunt');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 11, 12308, 1, 'Improved Sunder Armor');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 12, 12809, 1, 'Concussion Blow');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 13, 12308, 2, 'Improved Sunder Armor');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 14, 12312, 2, 'Improved Shield Wall');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 15, 16538, 5, 'One-Handed Weapon Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 16, 23922, 1, 'Shield Slam');
+INSERT INTO `playerbot_talent_build` VALUES (1, 2, 17, 12324, 5, 'Improved Demoralizing Shout');
 
 -- holy (神圣骑士), class 2 paladin talent page 0: 51 points, primary tree Holy
+-- The steps are the order in which a 神圣骑士 spends its points from level 10 to level 60, one rank per level. The
+-- Holy tree goes 神圣智慧 (Divine Intellect), 精神集中 (Spiritual Focus), 治疗之光 (Healing Light), 强化圣疗术
+-- (Improved Lay on Hands), 启发 (Illumination), 神恩术 (Divine Favor), 强化智慧祝福 (Improved Blessing of Wisdom),
+-- 不灭信仰 (Unyielding Faith), 神圣强化 (Holy Power) and, at the level that fills the tree, 神圣震击 (Holy Shock).
+-- The levels above it ask for the ranks of the other two trees that a healing paladin wants: 强化虔诚光环
+-- (Improved Devotion Aura), 守护者的宠爱 (Guardian's Favor) and 坚韧 (Toughness), and the ranks of 偏斜
+-- (Deflection), which is the first row of the retribution tree and asks for no point in that tree.
 DELETE FROM `playerbot_talent_build` WHERE `class`=2 AND `talent_page`=0;
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 1, 20262, 5, 'Divine Strength');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 2, 20257, 5, 'Divine Intellect');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 3, 20205, 5, 'Spiritual Focus');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 4, 20224, 5, 'Improved Seal of Righteousness');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 5, 20237, 3, 'Healing Light');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 6, 9453, 2, 'Unyielding Faith');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 7, 20210, 5, 'Illumination');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 8, 20473, 1, 'Holy Shock');
---   then 20 points of Protection (talent page 1)
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 9, 20138, 5, 'Improved Devotion Aura');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 10, 20127, 5, 'Redoubt');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 11, 20143, 5, 'Toughness');
-INSERT INTO `playerbot_talent_build` VALUES (2, 0, 12, 20096, 5, 'Anticipation');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 1, 20257, 5, 'Divine Intellect');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 2, 20205, 5, 'Spiritual Focus');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 3, 20237, 3, 'Healing Light');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 4, 20234, 2, 'Improved Lay on Hands');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 5, 20210, 5, 'Illumination');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 6, 20216, 1, 'Divine Favor');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 7, 20244, 2, 'Improved Blessing of Wisdom');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 8, 9453, 2, 'Unyielding Faith');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 9, 5923, 5, 'Holy Power');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 10, 20473, 1, 'Holy Shock');
+--   then the ranks of Protection (talent page 1) and of the first row of Retribution (talent page 2)
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 11, 20138, 5, 'Improved Devotion Aura');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 12, 20174, 2, 'Guardian\'s Favor');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 13, 20143, 3, 'Toughness');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 14, 20217, 1, 'Blessing of Kings');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 15, 20042, 5, 'Improved Blessing of Might');
+INSERT INTO `playerbot_talent_build` VALUES (2, 0, 16, 20060, 4, 'Deflection');
 
--- protection (防战), class 2 paladin talent page 1: 51 points, primary tree Protection
+-- protection (防护骑士), class 2 paladin talent page 1: 51 points, primary tree Protection
+-- The steps are the order in which a 防护骑士 spends its points from level 10 to level 60, one rank per level: the
+-- protection tree goes 盾牌壁垒 (Redoubt), 精确 (Precision), 守护者的宠爱 (Guardian's Favor), 强化正义之怒
+-- (Improved Righteous Fury), 王者祝福 (Blessing of Kings), 盾牌专精 (Shield Specialization), 强化制裁之锤
+-- (Improved Hammer of Justice), 庇护祝福 (Blessing of Sanctuary), 清算 (Reckoning), 单手武器专精 (One-Handed
+-- Weapon Specialization) and, at the level that fills the tree, 神圣之盾 (Holy Shield). The levels above it take
+-- 神圣之力 (Divine Strength), 强化正义圣印 (Improved Seal of Righteousness) and 奉献 (Consecration), and then
+-- 祈福 (Benediction) and 偏斜 (Deflection), which are the first row of the retribution tree and ask for no point
+-- in it. `LearnTalentsFromBuild()` matches a step by the ranks that the entry of Talent.dbc carries, so the one
+-- line that the maintainer may have to move is 奉献: the rank of that name in the data of this client is 20116.
 DELETE FROM `playerbot_talent_build` WHERE `class`=2 AND `talent_page`=1;
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 1, 20138, 5, 'Improved Devotion Aura');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 2, 20127, 5, 'Redoubt');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 3, 20189, 3, 'Precision');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 4, 20143, 5, 'Toughness');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 1, 20127, 5, 'Redoubt');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 2, 20189, 3, 'Precision');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 3, 20174, 2, 'Guardian\'s Favor');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 4, 20468, 3, 'Improved Righteous Fury');
 INSERT INTO `playerbot_talent_build` VALUES (2, 1, 5, 20217, 1, 'Blessing of Kings');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 6, 20468, 3, 'Improved Righteous Fury');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 7, 20148, 3, 'Shield Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 8, 20096, 5, 'Anticipation');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 9, 20925, 1, 'Holy Shield');
---   then 20 points of Retribution (talent page 2)
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 10, 20042, 5, 'Improved Blessing of Might');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 11, 20101, 5, 'Benediction');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 12, 25956, 2, 'Improved Judgement');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 13, 20335, 3, 'Improved Seal of the Crusader');
-INSERT INTO `playerbot_talent_build` VALUES (2, 1, 14, 20060, 5, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 6, 20148, 3, 'Shield Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 7, 20487, 3, 'Improved Hammer of Justice');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 8, 20911, 1, 'Blessing of Sanctuary');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 9, 20177, 4, 'Reckoning');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 10, 20196, 5, 'One-Handed Weapon Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 11, 20925, 1, 'Holy Shield');
+--   then the ranks of the other two trees of the levels above it
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 12, 20262, 5, 'Divine Strength');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 13, 20224, 5, 'Improved Seal of Righteousness');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 14, 20116, 1, 'Consecration');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 15, 20101, 5, 'Benediction');
+INSERT INTO `playerbot_talent_build` VALUES (2, 1, 16, 20060, 4, 'Deflection');
 
 -- retribution (惩戒骑), class 2 paladin talent page 2: 51 points, primary tree Retribution
+-- The steps are the order in which a 惩戒骑 spends its points from level 10 to level 60, one rank per level: the
+-- tree starts at 祈福 (Benediction), 强化审判 (Improved Judgement) and the defensive ranks of 偏斜 (Deflection),
+-- takes 命令圣印 (Seal of Command) at level 20, goes on over 定罪 (Conviction), 正义追击 (Pursuit of Justice),
+-- the 辩护 (Vindication) and 双手武器专精 (Two-Handed Weapon Specialization) that the middle levels ask for, and
+-- ends the tree with 复仇 (Vengeance) and 忏悔 (Repentance). The levels above it add the ranks of the other two
+-- trees that a ret paladin wants when its own tree is done: 强化虔诚光环 (Improved Devotion Aura), 精确
+-- (Precision), 守护者的宠爱 (Guardian's Favor), 王者祝福 (Blessing of Kings) and the ranks of 神圣之力 (Divine
+-- Strength) and 神圣智慧 (Divine Intellect). Two talents are written in two steps because the order of the build
+-- leaves their last ranks for the levels in the middle of the tree; `LearnTalentsFromBuild()` counts the ranks
+-- that the bot already has, so such a step goes on from the rank that the step before it stopped at.
 DELETE FROM `playerbot_talent_build` WHERE `class`=2 AND `talent_page`=2;
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 1, 20042, 5, 'Improved Blessing of Might');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 2, 20101, 5, 'Benediction');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 3, 25956, 2, 'Improved Judgement');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 4, 20335, 3, 'Improved Seal of the Crusader');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 5, 20060, 3, 'Deflection');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 6, 9452, 3, 'Vindication');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 7, 20117, 5, 'Conviction');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 8, 20375, 1, 'Seal of Command');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 9, 20091, 2, 'Improved Retribution Aura');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 10, 20218, 1, 'Sanctity Aura');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 11, 20066, 1, 'Repentance');
---   then 20 points of Protection (talent page 1)
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 12, 20138, 5, 'Improved Devotion Aura');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 13, 20127, 5, 'Redoubt');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 14, 20143, 5, 'Toughness');
-INSERT INTO `playerbot_talent_build` VALUES (2, 2, 15, 20096, 5, 'Anticipation');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 1, 20101, 5, 'Benediction');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 2, 25956, 2, 'Improved Judgement');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 3, 20060, 3, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 4, 20375, 1, 'Seal of Command');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 5, 20117, 5, 'Conviction');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 6, 26022, 2, 'Pursuit of Justice');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 7, 9452, 2, 'Vindication');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 8, 20111, 3, 'Two-Handed Weapon Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 9, 9452, 1, 'Vindication');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 10, 20060, 1, 'Deflection');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 11, 20049, 5, 'Vengeance');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 12, 20066, 1, 'Repentance');
+--   then the ranks of Holy (talent page 0) and Protection (talent page 1) of the levels above it
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 13, 20138, 5, 'Improved Devotion Aura');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 14, 20189, 3, 'Precision');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 15, 20174, 2, 'Guardian\'s Favor');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 16, 20217, 1, 'Blessing of Kings');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 17, 20262, 5, 'Divine Strength');
+INSERT INTO `playerbot_talent_build` VALUES (2, 2, 18, 20257, 4, 'Divine Intellect');
 
 -- beast mastery (野兽控制猎人), class 3 hunter talent page 0: 51 points, primary tree Beast Mastery
 DELETE FROM `playerbot_talent_build` WHERE `class`=3 AND `talent_page`=0;
@@ -284,32 +354,35 @@ INSERT INTO `playerbot_talent_build` VALUES (3, 2, 12, 19434, 1, 'Aimed Shot');
 INSERT INTO `playerbot_talent_build` VALUES (3, 2, 13, 19454, 5, 'Improved Arcane Shot');
 INSERT INTO `playerbot_talent_build` VALUES (3, 2, 14, 19464, 4, 'Improved Serpent Sting');
 
--- combat (战斗贼), class 4 rogue talent page 1: 51 points, the Combat tree only
--- The 31 points of the tree and the 20 that a level 60 character has left are spent in the same tree, so the
--- talent of the tree comes as the 31st step and the rows that are left come after it. Two steps name the dagger
--- skill: its first rank comes before the dual wield talent next to it, as a player takes them, and its four other
--- ranks come with the rest of the tree. The ranks that are not taken are the crowd control that a bot does not use
--- (Improved Gouge), the protection of a cast that a rogue never makes (Endurance), the second rank of an interrupt
--- whose longer lock only matters against players, and the weapon skill of the one weapon kind that the gear of a
--- combat bot is not given (fist weapons).
+-- combat (战斗贼), class 4 rogue talent page 1: 51 points, the only rogue build
+-- The steps are the order in which a 战斗贼 spends its points from level 10 to level 60, one rank per level: the
+-- combat tree goes 强化邪恶攻击 (Improved Sinister Strike), 闪电反射 (Lightning Reflexes), 精确 (Precision),
+-- 偏斜 (Deflection), 还击 (Riposte), 双武器专精 (Dual Wield Specialization), 剑刃乱舞 (Blade Flurry),
+-- 剑类武器专精 (Sword Specialization), 侵略 (Aggression), 武器专家 (Weapon Expertise) and, as the 31st point,
+-- 冲动 (Adrenaline Rush). The levels above it take the 20 points of the assassination tree: 恶意 (Malice),
+-- 强化切割 (Improved Slice and Dice), 无情 (Ruthlessness), 致命偷袭 (Lethality), 无情打击 (Relentless Strikes
+-- in the data named above), the rank of 无情 that the order leaves for level 57, and 强化刺骨 (Improved
+-- Eviscerate). A step of a talent whose ranks an earlier step has taken goes on from the rank that the bot has.
 DELETE FROM `playerbot_talent_build` WHERE `class`=4 AND `talent_page`=1;
 INSERT INTO `playerbot_talent_build` VALUES (4, 1, 1, 13732, 2, 'Improved Sinister Strike');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 2, 13712, 5, 'Lightning Reflexes');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 3, 13733, 3, 'Improved Backstab');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 2, 13712, 3, 'Lightning Reflexes');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 3, 13705, 5, 'Precision');
 INSERT INTO `playerbot_talent_build` VALUES (4, 1, 4, 13713, 5, 'Deflection');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 5, 13705, 5, 'Precision');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 6, 14251, 1, 'Riposte');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 7, 13743, 2, 'Improved Sprint');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 8, 13754, 1, 'Improved Kick');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 9, 13706, 1, 'Dagger Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 10, 13715, 5, 'Dual Wield Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 5, 14251, 1, 'Riposte');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 6, 13715, 5, 'Dual Wield Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 7, 13877, 1, 'Blade Flurry');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 8, 13960, 3, 'Sword Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 9, 18427, 3, 'Aggression');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 10, 30919, 2, 'Weapon Expertise');
 INSERT INTO `playerbot_talent_build` VALUES (4, 1, 11, 13750, 1, 'Adrenaline Rush');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 12, 13706, 4, 'Dagger Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 13, 13709, 5, 'Mace Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 14, 13877, 1, 'Blade Flurry');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 15, 13960, 5, 'Sword Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 16, 30919, 2, 'Weapon Expertise');
-INSERT INTO `playerbot_talent_build` VALUES (4, 1, 17, 18427, 3, 'Aggression');
+--   then the 20 points of the assassination tree, still keyed to the page of the combat talent
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 12, 14138, 5, 'Malice');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 13, 14165, 3, 'Improved Slice and Dice');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 14, 14156, 2, 'Ruthlessness');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 15, 14128, 5, 'Lethality');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 16, 14179, 1, 'Relentless Strikes');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 17, 14156, 1, 'Ruthlessness');
+INSERT INTO `playerbot_talent_build` VALUES (4, 1, 18, 14162, 3, 'Improved Eviscerate');
 
 -- discipline (戒律牧), class 5 priest talent page 0: 51 points, primary tree Discipline
 DELETE FROM `playerbot_talent_build` WHERE `class`=5 AND `talent_page`=0;
