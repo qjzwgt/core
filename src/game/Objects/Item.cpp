@@ -836,10 +836,18 @@ void Item::SetItemRandomProperties(int32 randomPropId)
             // worn item has to be written there as well, or the one who looks at the owner sees an item without
             // its suffix and without the attributes of that suffix. The mods of the item are not touched here,
             // which is why a property belongs on an item before that item is equipped.
+            //
+            // `Item::IsEquipped` alone does not say that the item is worn: an item that was only created is in
+            // no container and its slot is 0, which is the head slot, so such an item says that it is worn on
+            // the head of its owner, and the clients that look at that owner draw it there. Asking the owner for
+            // the item of the slot answers only for the item that is really worn in it.
             if (IsEquipped())
             {
                 if (Player* owner = GetOwner())
-                    owner->SetVisibleItemSlot(GetSlot(), this);
+                {
+                    if (owner->GetItemByPos(INVENTORY_SLOT_BAG_0, GetSlot()) == this)
+                        owner->SetVisibleItemSlot(GetSlot(), this);
+                }
             }
         }
     }

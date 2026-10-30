@@ -47,13 +47,20 @@ document and the code in step - it is what the maintainer reads to tune the valu
    item, and then put on the item before the item is equipped. Equipping is what applies the mods of an item and
    what writes the visible fields of the equipment of the player, which is all that another player sees of what a
    bot wears, its suffix and the attributes of that suffix included; a property set after the equip leaves an item
-   that shows no attributes to the one who looks at the bot. That is why `Player::StoreNewItemInSlot()` exists:
+   that shows no attributes to the one who looks at the bot. Those fields of one slot are what
+   `Player::SetVisibleItemSlot()` writes, and they have to say everything that the item says: the entry of it, the
+   identifier of every one of its enchantments - the attributes that a random property gives are the spells of the
+   PROP slots of the item, so a block that carries only the two enchantments that the name says are inspected
+   shows an affix whose attributes nobody can see - and the property with the factor of its suffix. That is why
+   `Player::StoreNewItemInSlot()` exists:
    `Player::StoreNewItemInBestSlots()` rolls another property, so the bot would wear something other than what
    was rated; that helper keeps the same order itself now, which is what puts the suffix on the gear that a bot
    copies from a player and on the gear of a premade template. `Item::SetItemRandomProperties()` writes that slot
-   of the equipment again when a property goes on an item that is worn already, so those fields never say less than
-   the item is; the mods of a worn item are not touched there, so the order stays the thing to get right. A bot
-   dressed before the order was fixed wears an item whose property was never written in `item_instance`, and
+   of the equipment again when a property goes on an item that is worn already, asking the owner for the item of its
+   own slot - the slot of a created item is 0, the head slot, and `Item::IsEquipped` calls such an item worn, so an
+   item that nobody wears would else be drawn on the head of its owner. The mods of a worn item are not touched by a
+   property, so the order stays the thing to get right. An item that carries no property although its entry names a
+   group was dressed while that group had no usable row of `item_enchantment_template` for the realm, and
    `EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots. Naming 野熊 / 雄鹰 / 灵猴 /
    猛虎 per role is not needed - the scoring picks the best of the group of that item where the group has one of
    them. An item of a group always wears one of its properties: when none of them gives an attribute that the

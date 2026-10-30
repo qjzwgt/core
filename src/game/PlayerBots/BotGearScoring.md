@@ -199,13 +199,26 @@ the attributes of that suffix included. A property set after the item is equippe
 item that shows no attributes to the one who looks at it, however right the rating of that property was. The same
 order is kept in `Player::StoreNewItemInBestSlots()` itself, which is how the gear that a bot copies from a player
 and the gear of a premade template are worn with their suffix, and `Item::SetItemRandomProperties()` asks the owner
-to write that slot of the equipment again when a property goes on an item that is worn already - the mods of a worn
-item are not touched there, so the order is still what the rating has to keep.
+to write that slot of the equipment again when a property goes on an item that is worn already. It asks the owner
+for the item of its own slot rather than trusting `Item::IsEquipped()`, because an item that was only created is in
+no container and its slot is 0, the head slot, and writing such an item puts it on the head of its owner for every
+client that looks at that owner until the owner is looked at again. The mods of a worn item are not touched by the
+property, so the order is still what the rating has to keep.
 
-The bots that were dressed before that order was fixed wear, until they are dressed again, an item of a property
-group without any property: the property of those items was never written in `item_instance`, so no reading of a
-saved item can give it back. `EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots, and
-the slot is dressed again with the item and with the property that belong to it.
+The other half of the same report was in what those fields carry rather than in when they are written. One slot of
+them is written by `Player::SetVisibleItemSlot()` and holds the entry of the item, the identifier of every one of its
+enchantments, and its random property with the factor of that suffix. The attributes that a property gives are the
+spells of the PROP slots of the item, and the block of a slot has room for the identifier of every enchantment of it
+- eight fields, one for the entry and one for each of the seven slots -, so writing only the two that
+`MAX_INSPECTED_ENCHANTMENT_SLOT` says are inspected showed an item whose affix had nothing to stand on. The fields of
+a slot say what the item says, which is the rule to keep there.
+
+What the wrong order cost is the clients that were looking at the bot at that moment, and not the item: the field of
+`item_instance` is written when an item is saved whatever the order was, so a saved item gives its property back at
+the next login and the affix of it appears then. An item that carries no property although its entry names a group
+was dressed while that group had no usable row of `item_enchantment_template` for the realm.
+`EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots, so that the slot of a bot that is
+dressed again gets the item and the property that belong to it.
 
 This is also why the weapon slots are filled after the armour: the item that goes in one hand depends on the item
 that goes in the other.

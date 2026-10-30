@@ -10463,6 +10463,8 @@ void Player::QuickEquipItem(uint16 pos, Item* pItem)
 
 void Player::SetVisibleItemSlot(uint8 slot, Item const* pItem)
 {
+    int const visibleProperties = PLAYER_VISIBLE_ITEM_1_PROPERTIES + (slot * MAX_VISIBLE_ITEM_OFFSET);
+
     if (pItem)
     {
         SetGuidValue(PLAYER_VISIBLE_ITEM_1_CREATOR + (slot * MAX_VISIBLE_ITEM_OFFSET), pItem->GetGuidValue(ITEM_FIELD_CREATOR));
@@ -10470,12 +10472,22 @@ void Player::SetVisibleItemSlot(uint8 slot, Item const* pItem)
         int VisibleBase = PLAYER_VISIBLE_ITEM_1_0 + (slot * MAX_VISIBLE_ITEM_OFFSET);
         SetUInt32Value(VisibleBase + 0, pItem->GetEntry());
 
-        for (int i = 0; i < MAX_INSPECTED_ENCHANTMENT_SLOT; ++i)
+        // What is written here is all that the clients which look at this player have of the item that it wears,
+        // the attributes of that item included. The block of one slot holds the entry of the item and then room
+        // for the identifier of every enchantment of it - eight fields, which is one for the entry and one for
+        // each of MAX_ENCHANTMENT_SLOT slots -, and the attributes that a random property gives are the spells
+        // of the PROP slots of the item. Copying only the two that the name says are inspected therefore leaves
+        // the one who looks at the owner with an item whose suffix has nothing to show, however right the
+        // property of that item is.
+        for (int i = 0; i < MAX_ENCHANTMENT_SLOT; ++i)
             SetUInt32Value(VisibleBase + 1 + i, pItem->GetEnchantmentId(EnchantmentSlot(i)));
 
-        // Use SetInt16Value to prevent set high part to FFFF for negative value
-        SetInt16Value(PLAYER_VISIBLE_ITEM_1_PROPERTIES + (slot * MAX_VISIBLE_ITEM_OFFSET), 0, pItem->GetItemRandomPropertyId());
-        SetUInt32Value(PLAYER_VISIBLE_ITEM_1_PROPERTIES + 1 + (slot * MAX_VISIBLE_ITEM_OFFSET), pItem->GetItemSuffixFactor());
+        // The field of the property is two shorts: the identifier of the random property, written with
+        // SetInt16Value so that the high part of a negative one is not set to FFFF, and the factor of its
+        // suffix. Writing that factor in the field after the property puts it in the pad of the block, and for
+        // the patches whose block has no pad in the identifier of the one who made the item.
+        SetInt16Value(visibleProperties, 0, pItem->GetItemRandomPropertyId());
+        SetUInt16Value(visibleProperties, 1, uint16(pItem->GetItemSuffixFactor()));
     }
     else
     {
@@ -10484,11 +10496,12 @@ void Player::SetVisibleItemSlot(uint8 slot, Item const* pItem)
         int VisibleBase = PLAYER_VISIBLE_ITEM_1_0 + (slot * MAX_VISIBLE_ITEM_OFFSET);
         SetUInt32Value(VisibleBase + 0, 0);
 
-        for (int i = 0; i < MAX_INSPECTED_ENCHANTMENT_SLOT; ++i)
+        // The whole block goes back to nothing, or the enchantments of the item that was in this slot stay on
+        // the body of the player for the clients which look at it.
+        for (int i = 0; i < MAX_ENCHANTMENT_SLOT; ++i)
             SetUInt32Value(VisibleBase + 1 + i, 0);
 
-        SetUInt32Value(PLAYER_VISIBLE_ITEM_1_PROPERTIES + 0 + (slot * MAX_VISIBLE_ITEM_OFFSET), 0);
-        SetUInt32Value(PLAYER_VISIBLE_ITEM_1_PROPERTIES + 1 + (slot * MAX_VISIBLE_ITEM_OFFSET), 0);
+        SetUInt32Value(visibleProperties, 0);
     }
 }
 
