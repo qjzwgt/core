@@ -3362,13 +3362,20 @@ void CombatBotBaseAI::UpdateVisualHonorRankBasedOnItems()
     me->SetByteValue(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_HIGHEST_HONOR_RANK, m_visualHonorRank);
 }
 
+// The distance of a battle bot, which is on the same ground in every battleground. A party bot answers by the
+// ground that it stands on, since a party plays in dungeons, in the open world, and in a battleground.
+float CombatBotBaseAI::GetChaseDistance() const
+{
+    return 25.0f;
+}
+
 void CombatBotBaseAI::BeginChasing(Unit* pVictim) const
 {
     if ((m_role == ROLE_RANGE_DPS || m_role == ROLE_HEALER) &&
         IsRangedDamageClass(me->GetClass()) &&
        !IsAttackSpeedOverridenForm(me->GetShapeshiftForm()) &&
        (me->GetPowerPercent(POWER_MANA) > 10.0f || me->GetWeaponForAttack(RANGED_ATTACK, true, true)))
-        me->SetCasterChaseDistance(25.0f);
+        me->SetCasterChaseDistance(GetChaseDistance());
     else if (me->HasDistanceCasterMovement())
         me->SetCasterChaseDistance(0.0f);
 

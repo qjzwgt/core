@@ -58,6 +58,14 @@ enum PartyBotSpells
 // How far above the ground it aimed for a bot may stand before it calls its pet back to it.
 #define PB_DROP_LAND_TOLERANCE 2.0f
 
+// The distance that a ranged party bot keeps from the enemy that it is holding off. The room that a party has for
+// that depends on the ground that it fights on: a dungeon is small and the party stands close together, the open
+// world gives room to step back, and a battleground is the widest of the three. A battleground is an instance as
+// well, so it is the one asked for first.
+#define PB_CHASE_DISTANCE_INSTANCE 10.0f
+#define PB_CHASE_DISTANCE_OUTDOORS 20.0f
+#define PB_CHASE_DISTANCE_BATTLEGROUND 30.0f
+
 bool PartyBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
     if (!m_race && !m_class)
@@ -149,7 +157,7 @@ bool PartyBotAI::IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy)
     {
         float const distance = me->GetDistance(pTarget);
         if (distance >= 15.0f && distance <= 30.0f &&
-            pTarget->GetDistance(pEnemy) >= 15.0f)
+            pTarget->GetDistance(pEnemy) >= GetChaseDistance())
             return true;
     }
 
@@ -184,6 +192,57 @@ Unit* PartyBotAI::GetDistancingTarget(Unit* pEnemy)
     return pNonTank;
 }
 
+// A bot of a ranged talent steps back from an enemy that came close only when the ground it wins is ground that it
+// keeps: the enemy must be held from walking after the bot, and the bot must be free to walk. Otherwise the bot
+// stands its ground and takes the attacks, going on with what its talent does - a healer goes on healing, a caster
+// goes on casting, a hunter swings the melee weapon that it wears - because running from an enemy that follows at
+// full speed only moves the fight somewhere else. What the enemy is itself busy with is not asked for: an enemy
+// that is held and cannot reach the bot turns to the one that it can reach, and the bot is to walk it around all
+// the same.
+bool PartyBotAI::CanRunAwayFrom(Unit const* pEnemy) const
+{
+    if (!pEnemy || !pEnemy->IsAlive())
+        return false;
+
+    // A root, a stun or a confusion keeps the enemy where it stands, and a snare walks slow enough that the
+    // distance that was won is kept. A fear is not counted here: a feared enemy is running away from the bot.
+    bool const enemyHeld =
+        pEnemy->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED) ||
+        pEnemy->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+        pEnemy->HasAuraType(SPELL_AURA_MOD_STUN) ||
+        pEnemy->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
+        pEnemy->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED);
+
+    if (!enemyHeld)
+        return false;
+
+    // And the bot must have its own movement: rooted or stunned it has nothing to gain, and confused or feared it
+    // goes where the effect takes it and not where it would run to.
+    if (me->HasUnitState(UNIT_STATE_NO_FREE_MOVE) ||
+        me->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+        me->HasAuraType(SPELL_AURA_MOD_STUN) ||
+        me->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
+        me->HasAuraType(SPELL_AURA_MOD_FEAR))
+        return false;
+
+    return true;
+}
+
+// The distance of the ground that the party is fighting on. A battleground is asked for first, because a
+// battleground is an instance too and the party that stands in its yard is not in a dungeon; the party that has a
+// battleground queued but has not landed keeps the distance of the ground that it is standing on.
+float PartyBotAI::GetChaseDistance() const
+{
+    if (me->InBattleGround())
+        return PB_CHASE_DISTANCE_BATTLEGROUND;
+
+    Map* pMap = me->GetMap();
+    if (pMap && pMap->IsDungeon())
+        return PB_CHASE_DISTANCE_INSTANCE;
+
+    return PB_CHASE_DISTANCE_OUTDOORS;
+}
+
 bool PartyBotAI::RunAwayFromTarget(Unit* pEnemy)
 {
     if (Unit* pTarget = GetDistancingTarget(pEnemy))
@@ -192,7 +251,7 @@ bool PartyBotAI::RunAwayFromTarget(Unit* pEnemy)
         return true;
     }
 
-    return me->GetMotionMaster()->MoveDistance(pEnemy, 15.0f);
+    return me->GetMotionMaster()->MoveDistance(pEnemy, GetChaseDistance());
 }
 
 bool PartyBotAI::DrinkAndEat()
@@ -1304,6 +1363,18 @@ void PartyBotAI::UpdateInCombatAI()
     if (CheckForDispelTargets())
         return;
 
+    // The chase generator keeps a distance from the target all by itself, and it is meant for the same thing as
+    // the running of the bot: a distance is worth keeping only while the target cannot close it again. So when the
+    // target stands next to the bot and nothing holds it, the distance is given back and the bot stands and
+    // fights; the class handler below goes on healing, casting, or swinging the melee weapon.
+    if (Unit* pVictim = me->GetVictim())
+    {
+        if (me->HasDistanceCasterMovement() &&
+            pVictim->CanReachWithMeleeAutoAttack(me) &&
+            !CanRunAwayFrom(pVictim))
+            me->SetCasterChaseDistance(0.0f);
+    }
+
     switch (me->GetClass())
     {
         case CLASS_PALADIN:
@@ -1981,7 +2052,7 @@ void PartyBotAI::UpdateInCombatAI_Hunter()
             }
         }
 
-        if (!me->HasUnitState(UNIT_STATE_ROOT) &&
+        if (CanRunAwayFrom(pVictim) &&
             (me->GetCombatDistance(pVictim) < 8.0f) &&
             (GetRole() != ROLE_MELEE_DPS) &&
              me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE)
@@ -2112,9 +2183,9 @@ void PartyBotAI::UpdateInCombatAI_Mage()
                         DoCastSpell(me, m_spells.mage.pFrostNova);
                     }
 
-                    if (RunAwayFromTarget(pVictim))
+                    if (CanRunAwayFrom(pVictim) && RunAwayFromTarget(pVictim))
                     {
-                        me->SetCasterChaseDistance(25.0f);
+                        me->SetCasterChaseDistance(GetChaseDistance());
                         return;
                     }
                 }
@@ -3591,7 +3662,6 @@ void PartyBotAI::UpdateInCombatAI_Druid()
                 BeginChasing(pVictim);
             }
             else if (pVictim->CanReachWithMeleeAutoAttack(me) &&
-                    (pVictim->GetVictim() == me) &&
                     !me->HasUnitState(UNIT_STATE_ROOT) &&
                     (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE))
             {
@@ -3601,9 +3671,14 @@ void PartyBotAI::UpdateInCombatAI_Druid()
                     if (DoCastSpell(pVictim, m_spells.druid.pEntanglingRoots) == SPELL_CAST_OK)
                         return;
                 }
-                me->SetCasterChaseDistance(25.0f);
-                if (RunAwayFromTarget(pVictim))
-                    return;
+                // The roots are for an enemy that is not held yet, so they are asked for before the bot asks
+                // itself whether walking away is worth it.
+                if (CanRunAwayFrom(pVictim))
+                {
+                    me->SetCasterChaseDistance(GetChaseDistance());
+                    if (RunAwayFromTarget(pVictim))
+                        return;
+                }
             }
 
             if (m_spells.druid.pFaerieFire &&

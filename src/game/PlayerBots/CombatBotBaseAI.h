@@ -158,6 +158,9 @@ public:
     uint8 GetHighestHonorRankFromEquippedItems() const;
     void UpdateVisualHonorRankBasedOnItems();
     void BeginChasing(Unit* pVictim) const;
+    // The distance that a ranged bot keeps from the target that it is holding off, and that the chase
+    // generator of the core keeps for it; a party bot answers by the ground that it stands on.
+    virtual float GetChaseDistance() const;
     bool SummonShamanTotems();
     SpellCastResult CastWeaponBuff(SpellEntry const* pSpellEntry, EquipmentSlots slot);
     bool UseTrinketEffects(bool onlyToBreakCC = false);

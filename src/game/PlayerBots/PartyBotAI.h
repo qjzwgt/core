@@ -65,8 +65,10 @@ public:
     bool GroupHasResurrection() const;
     void UpdateSpiritResurrection();
     void WalkToCorpse(Corpse* pCorpse);
+    float GetChaseDistance() const final;
     bool IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy);
     Unit* GetDistancingTarget(Unit* pEnemy);
+    bool CanRunAwayFrom(Unit const* pEnemy) const;
     bool RunAwayFromTarget(Unit* pEnemy);
     bool CrowdControlMarkedTargets();
     bool EnterCombatDruidForm();

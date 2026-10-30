@@ -132,6 +132,29 @@ document and the code in step - it is what the maintainer reads to tune the valu
    fight calls its pet where it is. A bot that rides, a leader that rides, and a pair that stands on different
    transports are left out of all of this.
 
+12. A ranged party bot walks away from an enemy that came close only when the ground it wins is ground that it keeps.
+   `PartyBotAI::CanRunAwayFrom()` is the one answer, and it is asked before any `RunAwayFromTarget()`: the enemy must
+   be held from following - a root, a stun, a confusion, or a snare that walks slow enough that the distance is kept -
+   and the bot must have its own movement, which the `UNIT_STATE_NO_FREE_MOVE` of the bot and its root, stun,
+   confusion and fear auras say. What the enemy is itself busy with is not asked for, because an enemy that is held
+   and can no longer reach the bot turns to the one that it can reach and the bot is to walk it around all the same.
+   A fear of the enemy is not counted, since a feared enemy is running away from the bot already. Without all of that
+   the bot stands and takes the attacks and goes on with what its talent does. The chase generator keeps a distance
+   for a ranged role all by itself, so `UpdateInCombatAI()` takes it back to `SetCasterChaseDistance(0.0f)` when the
+   enemy next to the bot is not held; that is what keeps a priest healing and a warlock casting instead of walking
+   backwards, and those two have no running of their own to change.
+   The distance of that kiting is `PartyBotAI::GetChaseDistance()`: ten yards in a dungeon or raid, twenty in the
+   open world, thirty in a battleground, the battleground asked for first because it is an instance too -
+   `PB_CHASE_DISTANCE_*` of `PartyBotAI.cpp`. It is what `RunAwayFromTarget()` steps back by, what the friend that
+   the bot runs back to must be away from the enemy (`IsValidDistancingTarget()`), and what the chase generator is
+   told to keep; `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle bot, which fights on the
+   same ground in every battleground. A hunter swings the melee weapon that it wears instead of running - the auto
+   attack of the core does the swinging, `UpdateAI` has taken the auto shot away from it below 8 yards, and its
+   raptor strike and mongoose bite are in the `CanReachWithMeleeAutoAttack()` branch. The three places that ask are
+   the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid casts Entangling Roots first,
+   which is the right answer for an enemy that is not held yet. The escape of a rogue that has vanished at low
+   health is not kiting and is not part of this.
+
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
   the compiled value. `.bot reload` reads the table again, so changing a value needs neither a restart nor a
