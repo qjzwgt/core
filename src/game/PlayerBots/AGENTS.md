@@ -61,7 +61,9 @@ document and the code in step - it is what the maintainer reads to tune the valu
    item that nobody wears would else be drawn on the head of its owner. The mods of a worn item are not touched by a
    property, so the order stays the thing to get right. An item that carries no property although its entry names a
    group was dressed while that group had no usable row of `item_enchantment_template` for the realm, and
-   `EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots. Naming 野熊 / 雄鹰 / 灵猴 /
+   `EquipRandomGearInEmptySlots()` takes such an item off before it fills the slots. The gear comes back with the
+   character from the database, so `RepairRandomGear()` asks for the same removal when a bot is loaded instead of
+   summoned; an old bot would else keep wearing gear that no player owns. Naming 野熊 / 雄鹰 / 灵猴 /
    猛虎 per role is not needed - the scoring picks the best of the group of that item where the group has one of
    them. An item of a group always wears one of its properties: when none of them gives an attribute that the
    talent values, the property that the creation of the item for a player would roll is taken, because an item

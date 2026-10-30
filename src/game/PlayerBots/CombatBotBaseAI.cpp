@@ -2858,15 +2858,14 @@ bool CombatBotBaseAI::PrepareDualWield()
     return me->CanDualWield();
 }
 
-// Dress the empty equipment slots of the bot with the gear that a player of its talent could realistically have
-// got at its level, and rate every item by the attributes that it gives to that talent.
-void CombatBotBaseAI::EquipRandomGearInEmptySlots()
+// Take off the worn items that belong to a group of random properties without having one of them, and say whether
+// one was taken. A bot that was dressed while the property of an item was still put on it after the item was
+// equipped wears such an item, which is an item that no player owns: it gives the bot nothing that the rating of
+// it counted, and it shows neither a suffix nor the attributes of a suffix to the one who looks at the bot.
+bool CombatBotBaseAI::RemoveGearWithoutRandomProperty()
 {
-    // A bot that was dressed while the property of an item was still put on it after the item was equipped wears
-    // an item of a property group without any property: an item that no player owns, that gives the bot nothing
-    // that the rating of it counted, and that shows no attributes to the one who looks at the bot. Take such an
-    // item off; the slot is empty again, and the filling below dresses it with the item and with the property
-    // that belong to it.
+    bool removed = false;
+
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
         Item* pWornItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -2877,7 +2876,30 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
             continue;
 
         me->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+        removed = true;
     }
+
+    return removed;
+}
+
+// The gear that a bot wears is saved with the character, so an old bot keeps the gear that an older version of
+// the dressing gave it. Take the gear without a property off and dress the empty slots again; the gear of the
+// other options of the auto equip is left alone, being either the gear of a new character or one that a template
+// writes as a whole.
+void CombatBotBaseAI::RepairRandomGear(uint32 option)
+{
+    if (option != PLAYER_BOT_AUTO_EQUIP_RANDOM_GEAR)
+        return;
+
+    if (RemoveGearWithoutRandomProperty())
+        EquipRandomGearInEmptySlots();
+}
+
+// Dress the empty equipment slots of the bot with the gear that a player of its talent could realistically have
+// got at its level, and rate every item by the attributes that it gives to that talent.
+void CombatBotBaseAI::EquipRandomGearInEmptySlots()
+{
+    RemoveGearWithoutRandomProperty();
 
     LearnArmorProficiencies();
 

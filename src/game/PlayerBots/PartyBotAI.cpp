@@ -1003,6 +1003,12 @@ void PartyBotAI::UpdateAI(uint32 const diff)
             // dressed with two weapons must take it back from the spell that it learned before it fights again.
             PrepareDualWield();
 
+            // The gear that a bot wears comes back from the database, and a bot that was dressed before the
+            // property of an item was put on it before the item was equipped wears items with no property at all.
+            // Such an item shows no suffix and no attributes to the one who looks at the bot, and it gives the bot
+            // none of what the rating of it counted, so the gear is taken off and the slots are dressed again.
+            RepairRandomGear(sWorld.getConfig(CONFIG_UINT32_PARTY_BOT_AUTO_EQUIP));
+
             if (me->IsGameMaster())
                 me->SetGameMaster(false);
 

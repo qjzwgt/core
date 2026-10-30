@@ -103,7 +103,13 @@ public:
     void LearnPremadeSpecForClass();
     void EquipPremadeGearTemplate();
     void EquipRandomGearInEmptySlots();
+    // Take off the worn items of a group of random properties that have no property of it, which no player owns;
+    // false when the bot wears none of them
+    bool RemoveGearWithoutRandomProperty();
     void AutoEquipGear(uint32 option);
+    // The gear that a bot wears is saved with the character, so this gives a bot that was dressed by an older
+    // version of the dressing the gear with the random property that its entries ask for
+    void RepairRandomGear(uint32 option);
     void LearnRandomTalents();
     // The talents of one talent tab, in the order the talents are listed in the tree
     void LearnTalentsInTab(uint32 talentTab, bool randomOrder);
