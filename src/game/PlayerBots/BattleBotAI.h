@@ -54,7 +54,6 @@ public:
     bool ShouldIgnoreCombat() const;
     bool DrinkAndEat();
     bool UseMount();
-    uint32 GetMountSpellId() const;
     bool CheckForUnreachableTarget();
     float GetMaxAggroDistanceForMap() const;
     bool AttackStart(Unit* pVictim);

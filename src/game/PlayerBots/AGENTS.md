@@ -91,6 +91,30 @@ document and the code in step - it is what the maintainer reads to tune the valu
    places of this subsystem where item and spell ids are written in C++ - to tune the tiers means moving them into
    `sql/custom/repack/`, not keeping a second list. A bot does not learn the first aid skill: the core checks the
    `RequiredSkill` of an item when it loads the prototypes and never when the item is used.
+10. A bot rides the mount of its own race, or the mount of its class for a paladin and a warlock, and it calls the
+   summon as a player calls it. The summons are the table `mountTiers` of `CombatBotBaseAI.cpp`: the ground mount of
+   each race at the level its vendor teaches it, forty for the one of sixty per cent speed and sixty for the one of a
+   hundred per cent, and the same two ranks of the warhorse and the steed that the classes teach their own members.
+   `CombatBotBaseAI::LearnRidingAndMounts()` gives a bot the summons of the rows that its race, class and level
+   answer to. It is asked for when a bot is created or loaded from the saved character, and again from the out of
+   combat update of `PartyBotAI` - a party that plays grows and its bots grow with it, since the group shares its
+   experience - and the function keeps the level that it taught at, so that it returns at once while the level of a
+   bot has not moved. What a bot already knows is never taken away. The rank of the riding skill is not written in
+   the table: `SkillLineAbility.dbc` says which skill and which rank of it a summon asks for, which covers the
+   riding of one's own race of the patches before 1.12 and the one riding skill of 1.12 without naming a skill.
+   Only when that data says nothing about the mount of a race are the `SKILL_RIDING_*` of `SharedDefines.h` raised
+   to the rank of the tier - the one place of this subsystem where a skill is written in C++, and a skill that the
+   SkillLine.dbc of the running patch does not have is never given. The two spells of the one riding skill of 1.12
+   (33388 and 33391) are learned besides, because they are how `Player::UpdateOldRidingSkillToNew()` teaches that
+   skill to a character that reaches the patch. A spell that the Spell.dbc of the running patch does not have is
+   passed over, so a patch of a low maximum level keeps the mounts and the skills that it has. `GetMountSpellId()`
+   answers with a summon only when the bot has learned it, which is also the measure that the travel form of a druid
+   and the ghost wolf of a shaman of a battleground are taken against: they move in their
+   own forms where there is no mount to ride. `SummonMount()` puts the summon through the normal pipeline of a spell,
+   so that the three seconds that a summon of these mounts takes show on the cast bar of the bot and the mount comes
+   under the rules that stop a spell. A party does not ride on the mount of its leader: a bot of `PartyBotAI` gets on
+   a mount while the leader is mounted and gets off when the leader gets off, and one that has nothing of its own to
+   ride stays on foot.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

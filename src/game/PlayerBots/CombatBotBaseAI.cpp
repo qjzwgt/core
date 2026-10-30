@@ -3646,6 +3646,243 @@ bool CombatBotBaseAI::BandageSelf()
     return false;
 }
 
+namespace
+{
+    // A character rides the mount of its race: the vendor of the race sells the mount of sixty per cent speed to a
+    // character of forty and the one of a hundred per cent to a character of sixty, and each is a spell the
+    // character learns. A paladin and a warlock ride the warhorse or the steed of their class rather than the mount
+    // of the same speed of their race, because the class teaches that one to its own member. The gold that a player
+    // pays for the mounts is not asked here - the money of a bot is not spent as a player spends it - only the
+    // mount that a character of that race, class and level is able to have.
+    struct MountTier
+    {
+        uint8 level;
+        uint8 race;           // the race whose members ride this mount, nothing for the mount of a class
+        uint8 playerClass;    // the class whose members ride this mount, nothing for the mount of a race
+        uint32 spellId;
+    };
+
+    MountTier const mountTiers[] =
+    {
+        { 40, RACE_HUMAN, 0, 470 },               // Black Stallion
+        { 40, RACE_NIGHTELF, 0, 10787 },          // Black Panther
+        { 40, RACE_DWARF, 0, 6896 },              // Black Ram
+        { 40, RACE_GNOME, 0, 17456 },             // Mechanostrider
+        { 40, RACE_TROLL, 0, 10795 },             // Ivory Raptor
+        { 40, RACE_ORC, 0, 581 },                 // Winter Wolf
+        { 40, RACE_TAUREN, 0, 18363 },            // Riding Kodo
+        { 40, RACE_UNDEAD, 0, 8980 },             // Skeletal Horse
+
+        { 60, RACE_HUMAN, 0, 22717 },             // Black War Steed
+        { 60, RACE_NIGHTELF, 0, 22723 },          // Black War Tiger
+        { 60, RACE_DWARF, 0, 22720 },             // Black War Ram
+        { 60, RACE_GNOME, 0, 22719 },             // Black Battlestrider
+        { 60, RACE_TROLL, 0, 22721 },             // Black War Raptor
+        { 60, RACE_ORC, 0, 22724 },               // Black War Wolf
+        { 60, RACE_TAUREN, 0, 22718 },            // Black War Kodo
+        { 60, RACE_UNDEAD, 0, 22722 },            // Red Skeletal Warhorse
+
+        { 40, 0, CLASS_PALADIN, 13819 },          // Summon Warhorse
+        { 60, 0, CLASS_PALADIN, 23214 },          // Summon Warhorse, the one of a hundred per cent speed
+        { 40, 0, CLASS_WARLOCK, 5784 },           // Summon Felsteed
+        { 60, 0, CLASS_WARLOCK, 23161 },          // Summon Felsteed, the one of a hundred per cent speed
+    };
+
+    // Patch 1.12 joined the riding of every race into one skill, and the core teaches that skill to a character that
+    // reaches the patch with these two spells (Player::UpdateOldRidingSkillToNew). A bot learns the same ones, so
+    // that its spellbook and its character sheet say what the patch makes a rider have; under the patches before,
+    // RaiseRidingSkill() raises the riding skill of the mount of the race instead.
+    enum RidingSkillSpells
+    {
+        SPELL_APPRENTICE_RIDING = 33388,
+        SPELL_JOURNEYMAN_RIDING = 33391,
+    };
+
+    // Under the patches before 1.12 the riding was the skill of the mount of one's own race, where the rank of
+    // seventy five let a character ride at sixty per cent speed and the rank of one hundred and fifty at a hundred
+    // per cent. The names of those skills are the one place of this subsystem where a skill is written down, and
+    // they are used only when SkillLineAbility.dbc says nothing about the mount of a race.
+    struct LegacyRidingSkill
+    {
+        uint8 race;
+        uint16 skillId;
+    };
+
+    LegacyRidingSkill const legacyRidingSkills[] =
+    {
+        { RACE_HUMAN, SKILL_RIDING_HORSE },
+        { RACE_DWARF, SKILL_RIDING_RAM },
+        { RACE_NIGHTELF, SKILL_RIDING_TIGER },
+        { RACE_ORC, SKILL_RIDING_WOLF },
+        { RACE_TROLL, SKILL_RIDING_RAPTOR },
+        { RACE_GNOME, SKILL_RIDING_MECHANOSTRIDER },
+        { RACE_UNDEAD, SKILL_RIDING_UNDEAD_HORSE },
+        { RACE_TAUREN, SKILL_RIDING_KODO },
+    };
+
+    void RaiseSkillToRank(Player* pPlayer, uint16 skillId, uint16 wantedRank)
+    {
+        if (!skillId || !wantedRank || pPlayer->GetSkillValuePure(skillId) >= wantedRank)
+            return;
+
+        uint16 maxRank = pPlayer->GetSkillMaxPure(skillId);
+        if (wantedRank > maxRank)
+            maxRank = wantedRank;
+
+        pPlayer->SetSkill(skillId, wantedRank, maxRank);
+    }
+
+    void RaiseRidingSkill(Player* pPlayer, uint32 mountSpellId, uint8 level, bool isRaceMount)
+    {
+        // A summon asks for the riding of the one who rides it, and SkillLineAbility.dbc says which skill and which
+        // rank of it each summon asks for: the riding of the character's own race under the patches before 1.12, and
+        // the one riding skill of every mount from that patch on. To raise the skill to the rank that the summon
+        // asks for is what the trainer of the ride does when it teaches the mount, and under the patches before 1.12
+        // it is what the quest leading a character of sixty to its epic bridle does.
+        bool askedByData = false;
+
+        SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(mountSpellId);
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            SkillLineAbilityEntry const* pAbility = itr->second;
+            if (!pAbility || !pAbility->skillId || pAbility->skillId >= MAX_SKILL_TYPE)
+                continue;
+
+            // The riding of one race is not a skill of the patches that joined them into one, and a skill that the
+            // SkillLine.dbc of the running patch does not have can not be given to anybody. The summon is left
+            // usable all the same, because the core does not ask the skill of a spell that it casts itself.
+            if (!sSkillLineStore.LookupEntry(pAbility->skillId))
+                continue;
+
+            askedByData = true;
+
+            uint32 wantedRank = pAbility->req_skill_value;
+            if (pAbility->min_value > wantedRank)
+                wantedRank = pAbility->min_value;
+
+            RaiseSkillToRank(pPlayer, static_cast<uint16>(pAbility->skillId), static_cast<uint16>(wantedRank));
+        }
+
+        // A mount of a class is taught by the class and asks no riding of its own, so only the mount of a race is
+        // measured against the skills above.
+        if (askedByData || !isRaceMount)
+            return;
+
+        uint16 const wantedRank = level >= 60 ? 150 : 75;
+        for (LegacyRidingSkill const& entry : legacyRidingSkills)
+        {
+            if (entry.race != pPlayer->GetRace() || !sSkillLineStore.LookupEntry(entry.skillId))
+                continue;
+
+            RaiseSkillToRank(pPlayer, entry.skillId, wantedRank);
+        }
+    }
+}
+
+// The mount that this bot rides: the highest rank of its own race or class that a character of its level has
+// learned the summon of. Nothing when the bot has no mount to ride, which is also the test that says whether a
+// shaman or a druid of a battleground has to move on its own legs and in its own form.
+uint32 CombatBotBaseAI::GetMountSpellId() const
+{
+    uint32 raceMount = 0;
+    uint32 classMount = 0;
+    uint8 reachedLevel = 0;
+
+    for (MountTier const& tier : mountTiers)
+    {
+        if (me->GetLevel() < tier.level || tier.level < reachedLevel)
+            continue;
+
+        if (tier.race && tier.race != me->GetRace())
+            continue;
+
+        if (tier.playerClass && tier.playerClass != me->GetClass())
+            continue;
+
+        if (!me->HasSpell(tier.spellId))
+            continue;
+
+        if (tier.level > reachedLevel)
+        {
+            reachedLevel = tier.level;
+            raceMount = 0;
+            classMount = 0;
+        }
+
+        if (tier.playerClass)
+            classMount = tier.spellId;
+        else
+            raceMount = tier.spellId;
+    }
+
+    return classMount ? classMount : raceMount;
+}
+
+// The riding skill and the summons of the mounts that a character of this race, class and level would have been
+// taught by now. It is asked for when the bot is created and when the level of the bot is other than the level it
+// was taught at, which is where a party that plays together reaches the level of a mount: a character buys the mount
+// of the rank its level has reached and learns it once. What the bot already knows is left alone, so a bot that was
+// saved as a rider keeps what it had.
+void CombatBotBaseAI::LearnRidingAndMounts()
+{
+    // A party that plays grows, and the level it grows to is asked here rather than watched anywhere else: the
+    // riding and the mounts of a rank are taught at the level that reaches it, once, and nothing is looked at while
+    // the level of the bot is the level it was last taught at.
+    if (me->GetLevel() == m_ridingTaughtLevel)
+        return;
+
+    m_ridingTaughtLevel = me->GetLevel();
+
+    // The riding of the patches from 1.12 on, learned from the riding trainer of the city as a character learns it.
+    // The rank of the skill comes with the spell, which is what the spells of the two ranks teach.
+    if (me->GetLevel() >= 40 && sSpellMgr.GetSpellEntry(SPELL_APPRENTICE_RIDING) &&
+        !me->HasSpell(SPELL_APPRENTICE_RIDING))
+        me->LearnSpell(SPELL_APPRENTICE_RIDING, false, false);
+
+    // The higher rank takes the lower one out of the spellbook, as it does for a character that grows.
+    if (me->GetLevel() >= 60 && sSpellMgr.GetSpellEntry(SPELL_JOURNEYMAN_RIDING) &&
+        !me->HasSpell(SPELL_JOURNEYMAN_RIDING))
+        me->LearnSpell(SPELL_JOURNEYMAN_RIDING, false, false);
+
+    for (MountTier const& tier : mountTiers)
+    {
+        if (me->GetLevel() < tier.level)
+            continue;
+
+        if (tier.race && tier.race != me->GetRace())
+            continue;
+
+        if (tier.playerClass && tier.playerClass != me->GetClass())
+            continue;
+
+        // A mount whose summon the Spell.dbc of the running patch does not have is passed over, which leaves a patch
+        // of a low maximum level with the mounts that it has.
+        if (!sSpellMgr.GetSpellEntry(tier.spellId))
+            continue;
+
+        RaiseRidingSkill(me, tier.spellId, tier.level, tier.race != 0);
+
+        if (!me->HasSpell(tier.spellId))
+            me->LearnSpell(tier.spellId, false, false);
+    }
+}
+
+// The mount is called the way a character calls it: the summon goes through the normal pipeline of a spell, so the
+// cast bar of the bot shows the three seconds that a mount of this era takes and the mount comes under the rules
+// that stop a spell. When a bot rides is left to the caller, which knows what the party or the battleground is
+// doing; here only whether the bot is on foot and what it would ride are asked.
+bool CombatBotBaseAI::SummonMount()
+{
+    if (me->IsMounted())
+        return false;
+
+    uint32 const spellId = GetMountSpellId();
+    if (!spellId)
+        return false;
+
+    return me->CastSpell(me, spellId, false) == SPELL_CAST_OK;
+}
+
 void CombatBotBaseAI::BreakCrowdControlEffects()
 {
     if (UseTrinketEffects(true))

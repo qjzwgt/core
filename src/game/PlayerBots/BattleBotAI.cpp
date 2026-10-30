@@ -38,30 +38,6 @@ enum BattleBotSpells
     BB_SPELL_AUTO_SHOT = 75,
     BB_SPELL_SHOOT_WAND = 5019,
 
-    BB_SPELL_MOUNT_40_HUMAN = 470,
-    BB_SPELL_MOUNT_40_NELF = 10787,
-    BB_SPELL_MOUNT_40_DWARF = 6896,
-    BB_SPELL_MOUNT_40_GNOME = 17456,
-    BB_SPELL_MOUNT_40_TROLL = 10795,
-    BB_SPELL_MOUNT_40_ORC = 581,
-    BB_SPELL_MOUNT_40_TAUREN = 18363,
-    BB_SPELL_MOUNT_40_UNDEAD = 8980,
-
-    BB_SPELL_MOUNT_60_HUMAN = 22717,
-    BB_SPELL_MOUNT_60_NELF = 22723,
-    BB_SPELL_MOUNT_60_DWARF = 22720,
-    BB_SPELL_MOUNT_60_GNOME = 22719,
-    BB_SPELL_MOUNT_60_TROLL = 22721,
-    BB_SPELL_MOUNT_60_ORC = 22724,
-    BB_SPELL_MOUNT_60_TAUREN = 22718,
-    BB_SPELL_MOUNT_60_UNDEAD = 22722,
-
-    BB_SPELL_MOUNT_40_PALADIN = 13819,
-    BB_SPELL_MOUNT_60_PALADIN = 23214,
-
-    BB_SPELL_MOUNT_40_WARLOCK = 5784,
-    BB_SPELL_MOUNT_60_WARLOCK = 23161,
-
     BB_ITEM_ARROW  = 2512,
     BB_ITEM_BULLET = 2516,
 };
@@ -72,66 +48,6 @@ enum BattleBotSpells
 #define GO_WSG_DROPPED_WARSONG_FLAG 179786
 #define GO_WSG_SILVERWING_FLAG 179830
 #define GO_WSG_WARSONG_FLAG 179831
-
-uint32 BattleBotAI::GetMountSpellId() const
-{
-    if (me->GetLevel() >= 60)
-    {
-        if (me->GetClass() == CLASS_PALADIN)
-            return BB_SPELL_MOUNT_60_PALADIN;
-        if (me->GetClass() == CLASS_WARLOCK)
-            return BB_SPELL_MOUNT_60_WARLOCK;
-
-        switch (me->GetRace())
-        {
-            case RACE_HUMAN:
-                return BB_SPELL_MOUNT_60_HUMAN;
-            case RACE_NIGHTELF:
-                return BB_SPELL_MOUNT_60_NELF;
-            case RACE_DWARF:
-                return BB_SPELL_MOUNT_60_DWARF;
-            case RACE_GNOME:
-                return BB_SPELL_MOUNT_60_GNOME;
-            case RACE_TROLL:
-                return BB_SPELL_MOUNT_60_TROLL;
-            case RACE_ORC:
-                return BB_SPELL_MOUNT_60_ORC;
-            case RACE_TAUREN:
-                return BB_SPELL_MOUNT_60_TAUREN;
-            case RACE_UNDEAD:
-                return BB_SPELL_MOUNT_60_UNDEAD;
-        }
-    }
-    else if (me->GetLevel() >= 40)
-    {
-        if (me->GetClass() == CLASS_PALADIN)
-            return BB_SPELL_MOUNT_40_PALADIN;
-        if (me->GetClass() == CLASS_WARLOCK)
-            return BB_SPELL_MOUNT_40_WARLOCK;
-
-        switch (me->GetRace())
-        {
-            case RACE_HUMAN:
-                return BB_SPELL_MOUNT_40_HUMAN;
-            case RACE_NIGHTELF:
-                return BB_SPELL_MOUNT_40_NELF;
-            case RACE_DWARF:
-                return BB_SPELL_MOUNT_40_DWARF;
-            case RACE_GNOME:
-                return BB_SPELL_MOUNT_40_GNOME;
-            case RACE_TROLL:
-                return BB_SPELL_MOUNT_40_TROLL;
-            case RACE_ORC:
-                return BB_SPELL_MOUNT_40_ORC;
-            case RACE_TAUREN:
-                return BB_SPELL_MOUNT_40_TAUREN;
-            case RACE_UNDEAD:
-                return BB_SPELL_MOUNT_40_UNDEAD;
-        }
-    }
-
-    return 0;
-}
 
 bool BattleBotAI::UseMount()
 {
@@ -158,14 +74,7 @@ bool BattleBotAI::UseMount()
     if (me->HasAura(SPELL_AURA_MOD_STEALTH))
         return false;
 
-    uint32 spellId = GetMountSpellId();
-    if (!spellId)
-        return false;
-
-    if (me->CastSpell(me, spellId, false) == SPELL_CAST_OK)
-        return true;
-
-    return false;
+    return CombatBotBaseAI::SummonMount();
 }
 
 bool BattleBotAI::DrinkAndEat()
@@ -696,6 +605,9 @@ void BattleBotAI::UpdateAI(uint32 const diff)
         PopulateSpellData();
         AddAllSpellReagents();
         me->UpdateSkillsToMaxSkillsForLevel();
+        // What a character of this level has been taught to ride, so that a bot rides its own mount and not the
+        // one that something else brought it to.
+        LearnRidingAndMounts();
         me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
         SummonPetIfNeeded();
         me->SetHealthPercent(100.0f);

@@ -152,6 +152,9 @@ public:
     bool BandageSelf();
     uint32 GetFoodSpellId() const;
     uint32 GetDrinkSpellId() const;
+    uint32 GetMountSpellId() const;
+    bool SummonMount();
+    void LearnRidingAndMounts();
     uint8 GetHighestHonorRankFromEquippedItems() const;
     void UpdateVisualHonorRankBasedOnItems();
     void BeginChasing(Unit* pVictim) const;
@@ -580,6 +583,7 @@ public:
     bool m_preventCasting = false;
     bool m_receivedBgInvite = false;
     uint8 m_visualHonorRank = 0;
+    uint8 m_ridingTaughtLevel = 0;
     CombatBotRoles m_role = ROLE_INVALID;
     uint8 m_requestedTalentPage = MAX_GEAR_SPEC_TABS;
 };

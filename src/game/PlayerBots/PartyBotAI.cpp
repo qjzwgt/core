@@ -812,6 +812,10 @@ void PartyBotAI::UpdateAI(uint32 const diff)
             me->TeleportTo(m_mapId, m_x, m_y, m_z, m_o);
         }
 
+        // The riding skill and the mount of the bot's own race or class, for a bot created at the level that asks
+        // for them and for a bot that was saved as a rider already: what the bot knows is left as it is.
+        LearnRidingAndMounts();
+
         ResetSpellData();
         PopulateSpellData();
         AddAllSpellReagents();
@@ -1010,10 +1014,20 @@ void PartyBotAI::UpdateAI(uint32 const diff)
 
     if (!me->IsInCombat())
     {
-        // Mount if leader is mounted and we don't have a target.
+        // The party and its bots grow together while it plays, and the bot that has come to the level of a mount
+        // takes the riding and the summon of that rank here, out of the way of a fight and on the walk. Nothing is
+        // asked of the bot whose level has not moved, and a bot that is called into the fight before it has its
+        // mount gets it on the next step that it takes on foot.
+        LearnRidingAndMounts();
+
+        // A party that rides is a party that is travelling, so the bot gets on a mount when the leader does and gets
+        // off when the leader gets off. It rides the mount of its own race or class and calls it the way a player
+        // does, with the three seconds that a summon of these mounts takes; a bot that has no mount of its own to
+        // ride - because it has not reached the level of one, or because it has been robbed of the spell - stays on
+        // foot rather than wearing the mount of somebody else.
         if (pLeader->IsMounted() && !me->GetVictim())
         {
-            if (!me->IsMounted())
+            if (!me->IsMounted() && !me->IsNonMeleeSpellCasted())
             {
                 // Leave shapeshift before mounting.
                 if (me->IsInDisallowedMountForm() &&
@@ -1021,17 +1035,7 @@ void PartyBotAI::UpdateAI(uint32 const diff)
                     me->HasAuraType(SPELL_AURA_MOD_SHAPESHIFT))
                     me->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
 
-                auto auraList = pLeader->GetAurasByType(SPELL_AURA_MOUNTED);
-                if (!auraList.empty())
-                {
-                    bool oldStateCastTime = me->HasCheatOption(PLAYER_CHEAT_NO_CAST_TIME);
-                    bool oldStatePower = me->HasCheatOption(PLAYER_CHEAT_NO_POWER);
-                    me->SetCheatOption(PLAYER_CHEAT_NO_CAST_TIME, true);
-                    me->SetCheatOption(PLAYER_CHEAT_NO_POWER, true);
-                    me->CastSpell(me, (*auraList.begin())->GetId(), true);
-                    me->SetCheatOption(PLAYER_CHEAT_NO_CAST_TIME, oldStateCastTime);
-                    me->SetCheatOption(PLAYER_CHEAT_NO_POWER, oldStatePower);
-                }
+                SummonMount();
             }
         }
         else if (me->IsMounted())
