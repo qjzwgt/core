@@ -2441,17 +2441,16 @@ void BattleBotAI::UpdateOutOfCombatAI_Warrior()
             return;
     }
 
+    // The shout is made up outside a fight only out of rage that the bot has already and does not need, ten points
+    // of it, and never with the health that Bloodrage would cost. Behind the gate of a battleground a warrior has no
+    // rage at all, so nothing is put up there and no aura can lapse before the fight; the shout of a fight belongs
+    // to the beginning of that fight, see BattleBotAI::UpdateInCombatAI_Warrior.
     if (m_spells.warrior.pBattleShout &&
-       !me->HasAura(m_spells.warrior.pBattleShout->Id))
+       !me->HasAura(m_spells.warrior.pBattleShout->Id) &&
+       (me->GetPower(POWER_RAGE) >= 10))
     {
         if (CanTryToCastSpell(me, m_spells.warrior.pBattleShout))
             DoCastSpell(me, m_spells.warrior.pBattleShout);
-        else if (m_spells.warrior.pBloodrage &&
-            (me->GetPower(POWER_RAGE) < 10) &&
-            CanTryToCastSpell(me, m_spells.warrior.pBloodrage))
-        {
-            DoCastSpell(me, m_spells.warrior.pBloodrage);
-        }
     }
 
     if (Unit* pVictim = me->GetVictim())

@@ -2513,17 +2513,16 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
             return;
     }
 
+    // The shout is made up outside a fight only out of rage that the bot has already and does not need, ten points
+    // of it, and never with the health that Bloodrage costs: a bot that waits with its group has no fight ahead of
+    // it that would pay such a price back. The shout of a fight is left to the beginning of that fight, see
+    // PartyBotAI::UpdateInCombatAI_Warrior.
     if (m_spells.warrior.pBattleShout &&
-       !me->HasAura(m_spells.warrior.pBattleShout->Id))
+       !me->HasAura(m_spells.warrior.pBattleShout->Id) &&
+       (me->GetPower(POWER_RAGE) >= 10))
     {
         if (CanTryToCastSpell(me, m_spells.warrior.pBattleShout))
             DoCastSpell(me, m_spells.warrior.pBattleShout);
-        else if (m_spells.warrior.pBloodrage &&
-            (me->GetPower(POWER_RAGE) < 100) &&
-            CanTryToCastSpell(me, m_spells.warrior.pBloodrage))
-        {
-            DoCastSpell(me, m_spells.warrior.pBloodrage);
-        }
     }
 
     if (Unit* pVictim = me->GetVictim())
