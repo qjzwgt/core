@@ -179,9 +179,10 @@ void DistancingMovementGenerator<Creature>::MovementInform(Creature& unit)
 }
 
 template <>
-void DistancingMovementGenerator<Player>::MovementInform(Player& /*unit*/)
+void DistancingMovementGenerator<Player>::MovementInform(Player& unit)
 {
-
+    if (unit.IsAlive() && unit.AI())
+        unit.AI()->MovementInform(DISTANCING_MOTION_TYPE, 0);
 }
 
 template bool DistancingMovementGenerator<Player>::Update(Player&, uint32 const& diff);

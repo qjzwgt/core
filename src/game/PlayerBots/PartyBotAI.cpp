@@ -963,6 +963,15 @@ void PartyBotAI::OnPlayerLogin()
         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
 }
 
+void PartyBotAI::MovementInform(uint32 movementType, uint32 /*data*/)
+{
+    if (movementType != DISTANCING_MOTION_TYPE)
+        return;
+
+    if (me->GetClass() == CLASS_MAGE && me->IsInCombat() && me->GetVictim())
+        m_updateTimer.Reset(0);
+}
+
 void PartyBotAI::UpdateAI(uint32 const diff)
 {
     m_updateTimer.Update(diff);
@@ -1226,6 +1235,11 @@ void PartyBotAI::UpdateAI(uint32 const diff)
             return;
         }
     }
+
+    if (me->GetClass() == CLASS_ROGUE &&
+        me->HasAuraType(SPELL_AURA_MOD_STEALTH) &&
+        !m_rogueStealthTargetGuid.IsEmpty())
+        return;
 
     Unit* pVictim = me->GetVictim();
 

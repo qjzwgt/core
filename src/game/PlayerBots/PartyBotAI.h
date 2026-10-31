@@ -46,6 +46,7 @@ public:
     bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
     void OnPlayerLogin() final;
     void UpdateAI(uint32 const diff) final;
+    void MovementInform(uint32 movementType, uint32 data = 0) final;
     void OnPacketReceived(WorldPacket const* packet) final;
 
     void CloneFromPlayer(Player const* pPlayer);
