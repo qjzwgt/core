@@ -178,7 +178,19 @@ document and the code in step - it is what the maintainer reads to tune the valu
    three places that ask are the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid
    casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape of a rogue
    that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
-   cent health.
+   cent health. A frost mage casts Frostbolt for a single target and uses Fireball only when it has not learned
+   Frostbolt or when the target is immune to Frostbolt, as a water elemental is.
+13. A party rogue opens only with Cheap Shot, falling back to Garrote only when Cheap Shot is not learned. With
+   neither opener it does not hold an automatic attack back for stealth. `PartyBotAI::AttackStart()` therefore sets
+   the victim without enabling auto attack while a rogue has stealth and an opener. At two combo points it keeps
+   Slice and Dice on a target above ten per cent health; below ten per cent it Eviscerates from three points; at
+   five points it refreshes Slice and Dice below ten seconds and otherwise Eviscerates. Riposte precedes Sinister
+   Strike, Kick is the only interrupt, Blade Flurry needs two nearby enemies that are not control-marked, and
+   Adrenaline Rush is for an elite at least two levels above the rogue with less than twenty energy. Evasion needs
+   health below eighty per cent and two non-ranged attackers within five yards. Vanish at less than fifteen per cent
+   health keeps the rogue in stealth away from the fight until health reaches forty per cent. Sprint is used only in
+   combat with the target over twenty yards away. Blind remains the control-marked spell and the reaction to another
+   attacker on the party.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

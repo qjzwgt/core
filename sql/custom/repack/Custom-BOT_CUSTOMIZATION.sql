@@ -541,26 +541,33 @@ INSERT INTO `playerbot_talent_build` VALUES (8, 1, 16, 11175, 3, 'Permafrost');
 INSERT INTO `playerbot_talent_build` VALUES (8, 1, 17, 16757, 1, 'Arctic Reach');
 INSERT INTO `playerbot_talent_build` VALUES (8, 1, 18, 11160, 3, 'Frost Channeling');
 
--- frost (冰法), class 8 mage talent page 2: 51 points, primary tree Frost
+-- frost (冰法), class 8 mage talent page 2: 51 points, 33 Frost and 18 Arcane.
+-- The steps are the order in which a frost mage spends its points from level 10 to 60: Improved Frostbolt, Improved
+-- Frost Nova, Frostbite and Cold Snap, then the Shatter and Ice Barrier route, then the specified Arcane talents.
+-- A step whose row is not open at the moment it comes is asked for again after the following steps, as in the
+-- protection warrior build.
 DELETE FROM `playerbot_talent_build` WHERE `class`=8 AND `talent_page`=2;
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 1, 11189, 2, 'Frost Warding');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 2, 11070, 5, 'Improved Frostbolt');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 3, 29438, 3, 'Elemental Precision');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 4, 11207, 5, 'Ice Shards');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 5, 11071, 3, 'Frostbite');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 6, 11165, 2, 'Improved Frost Nova');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 7, 11175, 3, 'Permafrost');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 8, 11151, 3, 'Piercing Ice');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 9, 12472, 1, 'Cold Snap');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 10, 11185, 3, 'Improved Blizzard');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 11, 11426, 1, 'Ice Barrier');
---   then 20 points of Arcane (talent page 0)
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 12, 11210, 2, 'Arcane Subtlety');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 13, 11222, 5, 'Arcane Focus');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 14, 29441, 4, 'Magic Absorption');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 1, 11070, 5, 'Improved Frostbolt');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 2, 11165, 2, 'Improved Frost Nova');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 3, 11071, 3, 'Frostbite');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 4, 12472, 1, 'Cold Snap');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 5, 11207, 4, 'Ice Shards');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 6, 11170, 5, 'Shatter');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 7, 11958, 1, 'Ice Block');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 8, 11207, 1, 'Ice Shards');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 9, 11151, 3, 'Piercing Ice');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 10, 11160, 3, 'Frost Channeling');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 11, 29438, 2, 'Elemental Precision');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 12, 11426, 1, 'Ice Barrier');
+--   then 18 points of Arcane (talent page 0) and the last two ranks of Arctic Reach
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 13, 11210, 2, 'Arcane Subtlety');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 14, 11222, 3, 'Arcane Focus');
 INSERT INTO `playerbot_talent_build` VALUES (8, 2, 15, 11213, 5, 'Arcane Concentration');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 16, 11247, 2, 'Magic Attunement');
-INSERT INTO `playerbot_talent_build` VALUES (8, 2, 17, 11252, 2, 'Improved Mana Shield');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 16, 28574, 1, 'Arcane Resilience');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 17, 11242, 3, 'Improved Arcane Explosion');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 18, 11222, 1, 'Arcane Focus');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 19, 18462, 3, 'Arcane Meditation');
+INSERT INTO `playerbot_talent_build` VALUES (8, 2, 20, 16757, 2, 'Arctic Reach');
 
 -- affliction (痛苦术), class 9 warlock talent page 0: 51 points, primary tree Affliction
 DELETE FROM `playerbot_talent_build` WHERE `class`=9 AND `talent_page`=0;

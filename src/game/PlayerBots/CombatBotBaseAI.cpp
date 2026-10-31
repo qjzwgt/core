@@ -3243,6 +3243,14 @@ bool CombatBotBaseAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* p
     return true;
 }
 
+// A frost mage falls back from Frostbolt to Fireball only when it has not learned Frostbolt or when the target is
+// immune to it, as a water elemental is.
+bool CombatBotBaseAI::ShouldUseFireballInsteadOfFrostbolt(Unit const* pTarget) const
+{
+    return !m_spells.mage.pFrostbolt ||
+        (pTarget && pTarget->IsImmuneToSpell(m_spells.mage.pFrostbolt, false));
+}
+
 SpellCastResult CombatBotBaseAI::DoCastSpell(Unit* pTarget, SpellEntry const* pSpellEntry)
 {
     if (m_preventCasting)

@@ -17,6 +17,7 @@
 #include "PartyBotAI.h"
 #include "Player.h"
 #include "CreatureAI.h"
+#include "Creature.h"
 #include "MotionMaster.h"
 #include "ObjectMgr.h"
 #include "PlayerBotMgr.h"
@@ -650,7 +651,13 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
     if (me->IsMounted())
         me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
-    if (me->Attack(pVictim, true))
+    bool const waitForStealthOpener =
+        me->GetClass() == CLASS_ROGUE &&
+        me->HasAuraType(SPELL_AURA_MOD_STEALTH) &&
+        (m_spells.rogue.pCheapShot || m_spells.rogue.pGarrote);
+
+    if (me->Attack(pVictim, !waitForStealthOpener) ||
+        (waitForStealthOpener && me->GetVictim() == pVictim))
     {
         BeginChasing(pVictim);
         return true;
@@ -666,6 +673,39 @@ Unit* PartyBotAI::GetMarkedTarget(RaidTargetIcon mark) const
         return me->GetMap()->GetUnit(targetGuid);
 
     return nullptr;
+}
+
+bool PartyBotAI::IsMarkedForCrowdControl(Unit const* pTarget) const
+{
+    for (RaidTargetIcon mark : m_marksToCC)
+        if (GetMarkedTarget(mark) == pTarget)
+            return true;
+
+    return false;
+}
+
+uint8 PartyBotAI::CountNonRangedAttackersInRange(float range) const
+{
+    uint8 count = 0;
+    for (Unit* pAttacker : me->GetAttackers())
+        if (pAttacker->GetVictim() == me &&
+            me->GetCombatDistance(pAttacker) <= range &&
+            !IsRangedDamageClass(pAttacker->GetClass()))
+            ++count;
+
+    return count;
+}
+
+uint8 PartyBotAI::CountUnmarkedEnemiesInRange(float range) const
+{
+    uint8 count = 0;
+    std::list<Unit*> targets;
+    me->GetEnemyListInRadiusAround(me, range, targets);
+    for (Unit* pTarget : targets)
+        if (IsValidHostileTarget(pTarget) && !IsMarkedForCrowdControl(pTarget))
+            ++count;
+
+    return count;
 }
 
 Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
@@ -1163,6 +1203,18 @@ void PartyBotAI::UpdateAI(uint32 const diff)
 
         if (me->IsNonMeleeSpellCasted())
             return;
+    }
+
+    if (m_rogueVanishRetreat)
+    {
+        if (me->GetHealthPercent() >= 40.0f)
+            m_rogueVanishRetreat = false;
+        else
+        {
+            if (me->GetVictim())
+                me->AttackStop();
+            return;
+        }
     }
 
     Unit* pVictim = me->GetVictim();
@@ -2262,7 +2314,8 @@ void PartyBotAI::UpdateInCombatAI_Mage()
                 return;
         }
 
-        if (m_spells.mage.pFireball &&
+        if (ShouldUseFireballInsteadOfFrostbolt(pVictim) &&
+            m_spells.mage.pFireball &&
             CanTryToCastSpell(pVictim, m_spells.mage.pFireball))
         {
             if (DoCastSpell(pVictim, m_spells.mage.pFireball) == SPELL_CAST_OK)
@@ -3024,6 +3077,9 @@ bool PartyBotAI::ShouldEnterStealth() const
     if (me->IsMounted())
         return false;
 
+    if (m_rogueVanishRetreat)
+        return true;
+
     if (me->GetVictim() || me->InBattleGround() || me->IsFFAPvP())
         return true;
 
@@ -3089,201 +3145,173 @@ void PartyBotAI::UpdateOutOfCombatAI_Rogue()
 
 void PartyBotAI::UpdateInCombatAI_Rogue()
 {
-    if (Unit* pVictim = me->GetVictim())
+    Unit* pVictim = me->GetVictim();
+    if (!pVictim)
+        return;
+
+    if (me->HasAuraType(SPELL_AURA_MOD_STEALTH))
     {
-        if (me->HasAuraType(SPELL_AURA_MOD_STEALTH))
+        SpellEntry const* pOpener = m_spells.rogue.pCheapShot ?
+            m_spells.rogue.pCheapShot : m_spells.rogue.pGarrote;
+
+        if (pOpener)
         {
-            if (m_spells.rogue.pPremeditation &&
-                CanTryToCastSpell(pVictim, m_spells.rogue.pPremeditation))
+            if (CanTryToCastSpell(pVictim, pOpener) &&
+                DoCastSpell(pVictim, pOpener) == SPELL_CAST_OK)
             {
-                DoCastSpell(pVictim, m_spells.rogue.pPremeditation);
+                // The opener was held back from the auto attack so that stealth could still be used.
+                me->Attack(pVictim, true);
+                return;
             }
 
-            if (pVictim->IsCaster())
-            {
-                if (m_spells.rogue.pGarrote &&
-                    CanTryToCastSpell(pVictim, m_spells.rogue.pGarrote))
-                {
-                    if (DoCastSpell(pVictim, m_spells.rogue.pGarrote) == SPELL_CAST_OK)
-                        return;
-                }
-            }
-            else
-            {
-                if (m_spells.rogue.pAmbush &&
-                    CanTryToCastSpell(pVictim, m_spells.rogue.pAmbush))
-                {
-                    if (DoCastSpell(pVictim, m_spells.rogue.pAmbush) == SPELL_CAST_OK)
-                        return;
-                }
-
-                if (m_spells.rogue.pCheapShot &&
-                    CanTryToCastSpell(pVictim, m_spells.rogue.pCheapShot))
-                {
-                    if (DoCastSpell(pVictim, m_spells.rogue.pCheapShot) == SPELL_CAST_OK)
-                        return;
-                }
-            }
-        }
-        else
-        {
-            if (m_spells.rogue.pVanish &&
-                (me->GetHealthPercent() < 10.0f))
-            {
-                if (m_spells.rogue.pPreparation &&
-                    !me->IsSpellReady(m_spells.rogue.pVanish) &&
-                    CanTryToCastSpell(me, m_spells.rogue.pPreparation))
-                {
-                    if (DoCastSpell(me, m_spells.rogue.pPreparation) == SPELL_CAST_OK)
-                        return;
-                }
-
-                if (CanTryToCastSpell(me, m_spells.rogue.pVanish))
-                {
-                    if (DoCastSpell(me, m_spells.rogue.pVanish) == SPELL_CAST_OK)
-                    {
-                        if (RunAwayFromTarget(pVictim))
-                            return;
-                    }
-                }
-            }
+            // The bot is already moving behind the target if Garrote needs it. Do not break stealth with an auto
+            // attack while the opener is waiting for range or position.
+            return;
         }
 
-        if (me->GetComboPoints() > 4)
+        // With neither opener learned, begin the ordinary attack and let stealth break.
+        me->Attack(pVictim, true);
+    }
+    else if (m_spells.rogue.pVanish &&
+            (me->GetHealthPercent() < 15.0f) &&
+            CanTryToCastSpell(me, m_spells.rogue.pVanish))
+    {
+        if (DoCastSpell(me, m_spells.rogue.pVanish) == SPELL_CAST_OK)
         {
-            std::vector<SpellEntry const*> vSpells;
-
-            // Give priority to Slice and Dice over other finishing moves.
-            if (m_spells.rogue.pSliceAndDice &&
-               !me->HasAura(m_spells.rogue.pSliceAndDice->Id) &&
-                pVictim->GetHealthPercent() > 10.0f)
-                vSpells.push_back(m_spells.rogue.pSliceAndDice);
-            else
-            {
-                if (m_spells.rogue.pEviscerate)
-                    vSpells.push_back(m_spells.rogue.pEviscerate);
-                if (m_spells.rogue.pKidneyShot && !pVictim->IsImmuneToMechanic(MECHANIC_STUN))
-                    vSpells.push_back(m_spells.rogue.pKidneyShot);
-                if (m_spells.rogue.pExposeArmor)
-                    vSpells.push_back(m_spells.rogue.pExposeArmor);
-                if (m_spells.rogue.pRupture)
-                    vSpells.push_back(m_spells.rogue.pRupture);
-            }
-
-            if (!vSpells.empty())
-            {
-                SpellEntry const* pComboSpell = SelectRandomContainerElement(vSpells);
-                if (CanTryToCastSpell(pVictim, pComboSpell))
-                {
-                    if (DoCastSpell(pVictim, pComboSpell) == SPELL_CAST_OK)
-                        return;
-                }
-            }
+            m_rogueVanishRetreat = true;
+            me->AttackStop();
+            RunAwayFromTarget(pVictim);
+            return;
         }
+    }
 
-        if (m_spells.rogue.pBlind)
-        {
-            if (Unit* pTarget = SelectAttackerDifferentFrom(pVictim))
-            {
-                if (CanTryToCastSpell(pTarget, m_spells.rogue.pBlind) &&
-                    CanUseCrowdControl(m_spells.rogue.pBlind, pTarget))
-                {
-                    if (DoCastSpell(pTarget, m_spells.rogue.pBlind) == SPELL_CAST_OK)
-                    {
-                        me->AttackStop();
-                        AttackStart(pVictim);
-                        return;
-                    }
-                }
-            }
-        }
+    uint32 const comboPoints = me->GetComboPoints();
+    float const healthPercent = pVictim->GetHealthPercent();
 
-        if (m_spells.rogue.pAdrenalineRush &&
-           !me->GetPower(POWER_ENERGY) &&
-            CanTryToCastSpell(me, m_spells.rogue.pAdrenalineRush))
+    if (m_spells.rogue.pSliceAndDice &&
+        comboPoints >= 2 &&
+        healthPercent > 10.0f &&
+        !me->HasAura(m_spells.rogue.pSliceAndDice->Id) &&
+        CanTryToCastSpell(pVictim, m_spells.rogue.pSliceAndDice))
+    {
+        if (DoCastSpell(pVictim, m_spells.rogue.pSliceAndDice) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (m_spells.rogue.pEviscerate &&
+        comboPoints >= 3 &&
+        healthPercent < 10.0f &&
+        CanTryToCastSpell(pVictim, m_spells.rogue.pEviscerate))
+    {
+        if (DoCastSpell(pVictim, m_spells.rogue.pEviscerate) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (comboPoints >= 5 && healthPercent > 10.0f)
+    {
+        SpellAuraHolder* pSliceAndDice = m_spells.rogue.pSliceAndDice ?
+            me->GetSpellAuraHolder(m_spells.rogue.pSliceAndDice->Id) : nullptr;
+
+        if (m_spells.rogue.pSliceAndDice &&
+            (!pSliceAndDice || pSliceAndDice->GetAuraDuration() < 10000) &&
+            CanTryToCastSpell(pVictim, m_spells.rogue.pSliceAndDice))
         {
-            if (DoCastSpell(me, m_spells.rogue.pAdrenalineRush) == SPELL_CAST_OK)
+            if (DoCastSpell(pVictim, m_spells.rogue.pSliceAndDice) == SPELL_CAST_OK)
                 return;
         }
-
-        if (pVictim->IsNonMeleeSpellCasted())
+        else if (m_spells.rogue.pEviscerate &&
+                 pSliceAndDice &&
+                 pSliceAndDice->GetAuraDuration() >= 10000 &&
+                 CanTryToCastSpell(pVictim, m_spells.rogue.pEviscerate))
         {
-            if (m_spells.rogue.pGouge &&
-                CanTryToCastSpell(pVictim, m_spells.rogue.pGouge))
+            if (DoCastSpell(pVictim, m_spells.rogue.pEviscerate) == SPELL_CAST_OK)
+                return;
+        }
+    }
+
+    if (m_spells.rogue.pBlind)
+    {
+        if (Unit* pTarget = SelectAttackerDifferentFrom(pVictim))
+        {
+            if (CanTryToCastSpell(pTarget, m_spells.rogue.pBlind) &&
+                CanUseCrowdControl(m_spells.rogue.pBlind, pTarget))
             {
-                if (DoCastSpell(pVictim, m_spells.rogue.pGouge) == SPELL_CAST_OK)
+                if (DoCastSpell(pTarget, m_spells.rogue.pBlind) == SPELL_CAST_OK)
+                {
+                    me->AttackStop();
+                    AttackStart(pVictim);
                     return;
-            }
-
-            if (m_spells.rogue.pKick &&
-                CanTryToCastSpell(pVictim, m_spells.rogue.pKick))
-            {
-                if (DoCastSpell(pVictim, m_spells.rogue.pKick) == SPELL_CAST_OK)
-                    return;
+                }
             }
         }
+    }
 
-        if (!me->HasAuraType(SPELL_AURA_MOD_STEALTH))
-        {
-            if (m_spells.rogue.pEvasion &&
-               (me->GetHealthPercent() < 80.0f) &&
-               ((GetAttackersInRangeCount(10.0f) > 2) || !IsRangedDamageClass(pVictim->GetClass())) &&
-                CanTryToCastSpell(me, m_spells.rogue.pEvasion))
-            {
-                if (DoCastSpell(me, m_spells.rogue.pEvasion) == SPELL_CAST_OK)
-                    return;
-            }
+    Creature* pCreature = pVictim->ToCreature();
+    bool const dangerousElite =
+        pCreature && pCreature->IsElite() &&
+        pVictim->GetLevel() >= me->GetLevel() + 2;
+    if (m_spells.rogue.pAdrenalineRush &&
+        dangerousElite &&
+        me->GetPower(POWER_ENERGY) < 20 &&
+        CanTryToCastSpell(me, m_spells.rogue.pAdrenalineRush))
+    {
+        if (DoCastSpell(me, m_spells.rogue.pAdrenalineRush) == SPELL_CAST_OK)
+            return;
+    }
 
-            if (m_spells.rogue.pColdBlood &&
-                CanTryToCastSpell(me, m_spells.rogue.pColdBlood))
-            {
-                DoCastSpell(me, m_spells.rogue.pColdBlood);
-            }
+    if (pVictim->IsNonMeleeSpellCasted() &&
+        m_spells.rogue.pKick &&
+        CanTryToCastSpell(pVictim, m_spells.rogue.pKick))
+    {
+        if (DoCastSpell(pVictim, m_spells.rogue.pKick) == SPELL_CAST_OK)
+            return;
+    }
 
-            if (m_spells.rogue.pBladeFlurry &&
-                CanTryToCastSpell(me, m_spells.rogue.pBladeFlurry))
-            {
-                if (DoCastSpell(me, m_spells.rogue.pBladeFlurry) == SPELL_CAST_OK)
-                    return;
-            }
-        }
+    if (m_spells.rogue.pBladeFlurry &&
+        CountUnmarkedEnemiesInRange(5.0f) >= 2 &&
+        CanTryToCastSpell(me, m_spells.rogue.pBladeFlurry))
+    {
+        if (DoCastSpell(me, m_spells.rogue.pBladeFlurry) == SPELL_CAST_OK)
+            return;
+    }
 
-        if (m_spells.rogue.pBackstab &&
-            CanTryToCastSpell(pVictim, m_spells.rogue.pBackstab))
-        {
-            if (DoCastSpell(pVictim, m_spells.rogue.pBackstab) == SPELL_CAST_OK)
-                return;
-        }
+    if (m_spells.rogue.pColdBlood &&
+        CanTryToCastSpell(me, m_spells.rogue.pColdBlood))
+    {
+        DoCastSpell(me, m_spells.rogue.pColdBlood);
+    }
 
-        if (m_spells.rogue.pGhostlyStrike &&
-            CanTryToCastSpell(pVictim, m_spells.rogue.pGhostlyStrike))
-        {
-            if (DoCastSpell(pVictim, m_spells.rogue.pGhostlyStrike) == SPELL_CAST_OK)
-                return;
-        }
+    if (m_spells.rogue.pEvasion &&
+        me->GetHealthPercent() < 80.0f &&
+        CountNonRangedAttackersInRange(5.0f) >= 2 &&
+        CanTryToCastSpell(me, m_spells.rogue.pEvasion))
+    {
+        if (DoCastSpell(me, m_spells.rogue.pEvasion) == SPELL_CAST_OK)
+            return;
+    }
 
-        if (m_spells.rogue.pHemorrhage &&
-            CanTryToCastSpell(pVictim, m_spells.rogue.pHemorrhage))
-        {
-            if (DoCastSpell(pVictim, m_spells.rogue.pHemorrhage) == SPELL_CAST_OK)
-                return;
-        }
+    if (m_spells.rogue.pRiposte &&
+        CanTryToCastSpell(pVictim, m_spells.rogue.pRiposte))
+    {
+        if (DoCastSpell(pVictim, m_spells.rogue.pRiposte) == SPELL_CAST_OK)
+            return;
+    }
 
-        if (m_spells.rogue.pSinisterStrike &&
-            CanTryToCastSpell(pVictim, m_spells.rogue.pSinisterStrike))
-        {
-            if (DoCastSpell(pVictim, m_spells.rogue.pSinisterStrike) == SPELL_CAST_OK)
-                return;
-        }
+    if (m_spells.rogue.pSinisterStrike &&
+        CanTryToCastSpell(pVictim, m_spells.rogue.pSinisterStrike))
+    {
+        if (DoCastSpell(pVictim, m_spells.rogue.pSinisterStrike) == SPELL_CAST_OK)
+            return;
+    }
 
-        if (m_spells.rogue.pSprint &&
-           !me->HasUnitState(UNIT_STATE_ROOT) &&
-           !me->CanReachWithMeleeAutoAttack(pVictim) &&
-            CanTryToCastSpell(me, m_spells.rogue.pSprint))
-        {
-            if (DoCastSpell(me, m_spells.rogue.pSprint) == SPELL_CAST_OK)
-                return;
-        }
+    if (me->IsInCombat() &&
+        m_spells.rogue.pSprint &&
+        !me->HasUnitState(UNIT_STATE_ROOT) &&
+        me->GetCombatDistance(pVictim) > 20.0f &&
+        CanTryToCastSpell(me, m_spells.rogue.pSprint))
+    {
+        if (DoCastSpell(me, m_spells.rogue.pSprint) == SPELL_CAST_OK)
+            return;
     }
 }
 

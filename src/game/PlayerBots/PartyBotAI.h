@@ -59,6 +59,9 @@ public:
     Player* SelectResurrectionTarget() const;
     Player* SelectShieldTarget() const;
     Unit* GetMarkedTarget(RaidTargetIcon mark) const;
+    bool IsMarkedForCrowdControl(Unit const* pTarget) const;
+    uint8 CountNonRangedAttackersInRange(float range) const;
+    uint8 CountUnmarkedEnemiesInRange(float range) const;
     bool CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const;
     bool DrinkAndEat();
     bool ShouldAutoRevive() const;
@@ -113,6 +116,7 @@ public:
     float m_o = 0.0f;
     bool m_resetSpellData = false;
     bool m_petDismissedForDrop = false;
+    bool m_rogueVanishRetreat = false;
     float m_dropLandingZ = 0.0f;
 };
 
