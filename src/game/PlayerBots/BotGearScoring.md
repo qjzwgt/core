@@ -135,9 +135,9 @@ general spell-damage weight. This keeps a bot from giving up stamina and useful 
 damage that only part of its spells use.
 
 Spirit, fixed mana, fixed health and magic resistance are also worth zero to every talent. General spell damage is
-worth 3 points for mage, warlock, shadow priest, elemental shaman and balance druid, and 2.5 for holy paladin,
-discipline priest, holy priest, restoration shaman and restoration druid. The first group values intelligence at 2
-points.
+worth 2 points for mage, warlock, shadow priest, elemental shaman and balance druid, and 1.5 for holy paladin,
+discipline priest, holy priest, restoration shaman and restoration druid. Enhancement shaman values it at 1. The
+first group values intelligence at 2 points and the healing group at 3.
 
 Not rated: the on use and combat procs of an item, the set bonuses, the enchantments of the items (the items are
 created new), the weapon skills and the defense rating (only the dodge, parry and block percentages of an item are
