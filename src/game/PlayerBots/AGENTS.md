@@ -15,7 +15,9 @@ document and the code in step - it is what the maintainer reads to tune the valu
   `ITEM_QUALITY_EPIC`. The rules and the documents say "blue gear" and "pick up bound epic" in that sense; do not
   "correct" them to the English labels of the client, and do not confuse `RARE` with the epic quality.
 - "Talent" and "spec" mean `BotGearSpec`. A bot learns its spells in one talent tab, so the tab that holds the
-  learned spells says the talent; when nothing is learned, the role of the bot says it.
+  learned spells says the talent; when nothing is learned, the role of the bot says it. A talent page asked for by
+  `.partybot add <abbreviation>` is authoritative for the gear of that bot, since a tank build can spend its first
+  points in another tree before the tree of its talent opens.
 
 ## Decisions of the maintainer (already made - ask before changing them)
 1. The pool is what a player reaches while adventuring: `ItemPrototype::Discovered` ∪ world loot ∪ crafted gear,
@@ -160,7 +162,9 @@ document and the code in step - it is what the maintainer reads to tune the valu
    backwards, and those two have no running of their own to change.
    The distance of that kiting is `PB_RUN_AWAY_DISTANCE`, eight yards on every kind of ground. It is what
    `RunAwayFromTarget()` steps back by, what the friend that the bot runs back to must be away from the enemy
-   (`IsValidDistancingTarget()`), and what the chase generator is told to keep after the bot has stepped back.
+   (`IsValidDistancingTarget()`), and what the chase generator is told to keep after the bot has stepped back. A
+   bot that already has those eight yards does not run again, so a mage whose Frost Nova holds the enemy casts from
+   that distance instead of starting another distance movement.
    `PartyBotAI::GetChaseDistance()` remains the ordinary distance for chasing and casting: ten yards in a dungeon
    or raid, twenty in the open world and thirty in a battleground, the battleground asked for first because it is
    an instance too. `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle bot, which fights on the

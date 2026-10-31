@@ -10,11 +10,12 @@ decisions about which slots to fill and which item wins.
 
 ## The talent of the bot
 
-`GetBotGearSpec()` reads which talent tab the bot has learned spells in (`TalentEntry` + `TalentTabEntry.tabpage`),
-which is reliable because a bot learns its talents in one tab. When it has learned none, the role of the bot
-(`AutoAssignRole()`) decides. The role and the learning of the talents are not changed by this code; a bot that is
-given an intended talent tree, which `.partybot add <abbreviation>` does, is rated correctly without touching
-anything here.
+`GetBotGearSpec()` uses the talent page that `.partybot add <abbreviation>` asked for. That page is authoritative
+because a build can spend its first points in another tree: the protection warrior build, for example, begins with
+the low-level Arms and Fury talents before the Protection tree opens. The tank role likewise identifies a
+protection warrior, protection paladin or feral bear. Any other bot without an asked page uses the tree in which it
+has learned the most talents (`TalentEntry` + `TalentTabEntry.tabpage`), and the role (`AutoAssignRole()`) decides
+when it has learned none.
 
 ## Summoning a bot of a chosen talent
 
@@ -22,8 +23,8 @@ anything here.
 the talent page to learn (`gearSpecAliases` in `BotGearScoring.cpp`, matched by `GetBotGearSpecAlias()`).
 `CombatBotBaseAI::LearnPremadeSpecForClass()` learns the build of that talent instead of looking for a premade
 template - those are chosen by role and not by talent - and then learns the spells of the trainers and of the items,
-as it does when there is no template. Nothing else is needed for the gear: the rating reads the talent back from the
-tree the bot has and from its role, which is also what tells the cat from the bear on the feral page of the druid.
+as it does when there is no template. The rating keeps the asked talent page, which is also what tells the cat from
+the bear on the feral page of the druid.
 
 ## The talents that a bot learns
 
@@ -116,6 +117,11 @@ Every candidate is rated with `EvaluateBotGearItem()`, which collects what the i
   hit, mana per five seconds, resistances, dodge, parry, block, fixed mana and health);
 - the best of the random properties that the item can use (see below).
 
+Item armour and the armour of a random property are collected as `GEAR_STAT_ARMOR` and have a compiled weight of
+zero for every talent. Armour is not confused with the other resistances: magic resistance is collected as
+`GEAR_STAT_RESISTANCE`, but it also has a compiled weight of zero. A shield is still chosen by the most armour in
+its slot, as described below.
+
 The attributes are multiplied by the weight they have for the talent of the bot and summed up. Percentages count as
 one unit per percent. The compiled weights are in `defaultGearStatWeights` and follow the scale "1% of hit or
 critical strike is worth 20 points"; the values are meant to be adjusted, they are a starting point.
@@ -126,6 +132,11 @@ damage for one school and damage that covers more than one school but not all of
 realm can give it a weight in `playerbot_gear_stat_weights`. Only an aura that covers every magic school keeps the
 general spell-damage weight. This keeps a bot from giving up stamina and useful attributes for attack power or for
 damage that only part of its spells use.
+
+Spirit, fixed mana, fixed health and magic resistance are also worth zero to every talent. General spell damage is
+worth 3 points for mage, warlock, shadow priest, elemental shaman and balance druid, and 2.5 for holy paladin,
+discipline priest, holy priest, restoration shaman and restoration druid. The first group values intelligence at 2
+points.
 
 Not rated: the on use and combat procs of an item, the set bonuses, the enchantments of the items (the items are
 created new), the weapon skills and the defense rating (only the dodge, parry and block percentages of an item are

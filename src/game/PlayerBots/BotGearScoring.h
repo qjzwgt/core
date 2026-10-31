@@ -8,8 +8,8 @@ class ChatHandler;
 class ItemPrototype;
 class Player;
 
-// The talent that a bot is built around. The talents of a bot are learned in one talent tab, so the tab that has
-// the learned spells says the talent, and the role of the bot says it when no talent is learned.
+// The talent that a bot is built around. The page asked at summoning says it; otherwise the learned talents and the
+// role say it, with a tank role taking precedence over the learned tree for the classes that have a tank talent.
 enum BotGearSpec
 {
     GEAR_SPEC_NONE = 0,
@@ -61,6 +61,7 @@ enum BotGearStat
     GEAR_STAT_PARRY,
     GEAR_STAT_BLOCK,
     GEAR_STAT_RESTRICTED_SPELL_DAMAGE,            // spell damage that does not cover every magic school
+    GEAR_STAT_ARMOR,                              // item armour and the armour of a random property
     MAX_GEAR_STATS
 };
 
@@ -92,10 +93,10 @@ struct BotGearWeaponRules
 // The number of talent pages a class has (TalentTabEntry.tabpage), also used as "no talent page was asked for"
 enum { MAX_GEAR_SPEC_TABS = 3 };
 
-// A talent that a bot can be summoned with (`.partybot add <abbreviation>`). The rating reads the talent back from
-// the tree that the bot learns and from its role (see GetBotGearSpec), so an entry only says which class to create,
-// which role to give it, and which talent page of that class to fill; MAX_GEAR_SPEC_TABS as the page leaves the
-// choice of the tree to the class, which is right for the classes rated by one talent (hunter, mage, warlock).
+// A talent that a bot can be summoned with (`.partybot add <abbreviation>`). An entry says which class to create,
+// which role to give it, and which talent page of that class to fill. The page is also authoritative for the gear;
+// MAX_GEAR_SPEC_TABS as the page leaves the choice of the tree to the class, which is right for the classes rated
+// by one talent (hunter, mage, warlock).
 struct BotGearSpecAlias
 {
     char const* alias;
@@ -114,8 +115,10 @@ struct BotGearItemValue
     float score = 0.0f;
 };
 
-// The talent of a bot, from its learned talents and from its role when it has no learned talent
-BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role);
+// The talent of a bot. A page that was asked for when the bot was summoned is authoritative, as is the tank role
+// of a class that has a tank talent; otherwise the learned talents and then its role say which talent it has.
+BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role,
+    uint8 requestedTalentPage = MAX_GEAR_SPEC_TABS);
 // How the weapon slots of a bot of that talent must be filled
 BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec);
 // True when the talent refuses this kind of weapon: such an item is not a candidate for that bot, in any slot.

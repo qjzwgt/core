@@ -219,6 +219,10 @@ bool PartyBotAI::CanRunAwayFrom(Unit const* pEnemy) const
     if (!enemyHeld)
         return false;
 
+    // Once the bot has enough room, there is nothing left to win by running again.
+    if (me->GetCombatDistance(pEnemy) >= PB_RUN_AWAY_DISTANCE)
+        return false;
+
     // And the bot must have its own movement: rooted or stunned it has nothing to gain, and confused or feared it
     // goes where the effect takes it and not where it would run to.
     if (me->HasUnitState(UNIT_STATE_NO_FREE_MOVE) ||

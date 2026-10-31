@@ -24,36 +24,38 @@ namespace
 {
     // The weight of every attribute for every talent, in the order of the values of BotGearStat:
     // strength agility intellect spirit stamina mana health melee ap ranged ap spell damage healing physical crit
-    // physical hit spell crit spell hit mana per 5 resistance dodge parry block restricted spell damage.
+    // physical hit spell crit spell hit mana per 5 resistance dodge parry block restricted spell damage armor.
     // Attack power and spell damage that does not cover every magic school are deliberately worth nothing: a
     // player who is dressing to survive and make a balanced character does not give up stamina and useful
     // attributes for either of them.
+    // Spirit, fixed mana, fixed health and magic resistance are deliberately worth nothing to every talent. The
+    // casting talents value intelligence and general spell damage instead.
     // The talents that were rated by hand keep the values they were given, the other ones follow the same scale,
     // and every value can be changed in the table `playerbot_gear_stat_weights` without compiling again.
     float const defaultGearStatWeights[MAX_GEAR_SPECS][MAX_GEAR_STATS] =
     {
-        /*         STR AGI INT SPI STA MAN HEA MAP RAP SPD HEL PCR PHR SCR SHR M5 RES DDG PAR BLK SSD */
-        /* none*/  {  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
-        /* arms*/  {2.0,1.0,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0 },
-        /* fury*/  {2.0,1.0,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0 },
-        /* protw*/{1.0,1.5,  0,  0,3.0,  0, 0.3,  0,  0,  0,  0, 5,15,  0,  0,  0,0.5,  0,  0,  0,  0 },
-        /* holy*/  {0.5,  0,3.0,0.5,1.0,0.2, 0.1,  0,  0,  0,2.0, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0 },
-        /* protp*/{1.0,1.5,0.5,0.25,3.0,0.03,0.3,  0,  0,  0,  0, 5,15,  0,  0,1.0,0.5,  0,  0,  0,  0 },
-        /* ret*/   {2.0,1.5,1.0,0.25,1.0,0.07,0.1,  0,  0,  0,  0,20,20,  0,  0,1.0,  0,  0,  0,  0,  0 },
-        /* hnt*/   {  0,2.5,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,0.5,  0,  0,  0,  0,  0 },
-        /* rg*/    {1.0,2.0,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0 },
-        /* dis*/   {  0,  0,3.0,0.5,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,20,10,2.0,  0,  0,  0,  0,  0 },
-        /* holyp*/ {  0,  0,3.0,0.5,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,20, 5,2.0,  0,  0,  0,  0,  0 },
-        /* shd*/   {  0,  0,1.0,0.5,0.5,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0 },
-        /* ele*/   {  0,  0,1.0,0.5,0.5,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0 },
-        /* enh*/   {2.0,1.5,1.0,  0,0.5,0.07,0.05,  0,  0,0.5,0.5,15,15, 0, 0,  0,  0,  0,  0,  0,  0 },
-        /* shm*/   {  0,  0,3.0,1.0,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0 },
-        /* mge*/   {  0,  0,1.0,  0,0.5,0.07,0.05,  0,  0,1.0,  0,  0, 0,20,20,  0,  0,  0,  0,  0,  0 },
-        /* wlk*/   {  0,  0,1.0,0.25,1.0,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,0.5,  0,  0,  0,  0,  0 },
-        /* bal*/   {  0,  0,1.0,0.5,1.0,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0 },
-        /* cat*/   {1.0,2.0,0.5,0.25,1.0,0.03,0.1,  0,  0,  0,  0,20,20,  0,  0,0.5,  0,  0,  0,  0,  0 },
-        /* ber*/   {0.5,2.0,0.5,  0,3.0,0.03,0.3,  0,  0,  0,  0, 5,10,  0,  0,  0,0.5,  0,  0,  0,  0 },
-        /* drd*/   {  0,  0,3.0,1.0,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0 },
+        /*         STR AGI INT SPI STA MAN HEA MAP RAP SPD HEL PCR PHR SCR SHR M5 RES DDG PAR BLK SSD ARM */
+        /* none*/  {  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* arms*/  {2.0,1.0,  0,  0,0.5,  0,  0,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* fury*/  {2.0,1.0,  0,  0,0.5,  0,  0,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* protw*/{1.0,1.5,  0,  0,3.0,  0,  0,  0,  0,  0,  0, 5,15,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* holy*/  {0.5,  0,3.0,  0,1.0,  0,  0,  0,  0,2.5,2.0, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0,  0 },
+        /* protp*/{1.0,1.5,0.5,  0,3.0,  0,  0,  0,  0,  0,  0, 5,15,  0,  0,1.0,  0,  0,  0,  0,  0,  0 },
+        /* ret*/   {2.0,1.5,1.0,  0,1.0,  0,  0,  0,  0,  0,  0,20,20,  0,  0,1.0,  0,  0,  0,  0,  0,  0 },
+        /* hnt*/   {  0,2.5,  0,  0,0.5,  0,  0,  0,  0,  0,  0,20,20,  0,  0,0.5,  0,  0,  0,  0,  0,  0 },
+        /* rg*/    {1.0,2.0,  0,  0,0.5,  0,  0,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* dis*/   {  0,  0,3.0,  0,1.0,  0,  0,  0,  0,2.5,2.5, 0, 0,20,10,2.0,  0,  0,  0,  0,  0,  0 },
+        /* holyp*/ {  0,  0,3.0,  0,1.0,  0,  0,  0,  0,2.5,2.5, 0, 0,20, 5,2.0,  0,  0,  0,  0,  0,  0 },
+        /* shd*/   {  0,  0,2.0,  0,0.5,  0,  0,  0,  0,3.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0,  0 },
+        /* ele*/   {  0,  0,2.0,  0,0.5,  0,  0,  0,  0,3.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0,  0 },
+        /* enh*/   {2.0,1.5,1.0,  0,0.5,  0,  0,  0,  0,0.5,0.5,15,15, 0, 0,  0,  0,  0,  0,  0,  0,  0 },
+        /* shm*/   {  0,  0,3.0,  0,1.0,  0,  0,  0,  0,2.5,2.5, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0,  0 },
+        /* mge*/   {  0,  0,2.0,  0,0.5,  0,  0,  0,  0,3.0,  0,  0, 0,20,20,  0,  0,  0,  0,  0,  0,  0 },
+        /* wlk*/   {  0,  0,2.0,  0,1.0,  0,  0,  0,  0,3.0,  0,  0, 0,20,20,0.5,  0,  0,  0,  0,  0,  0 },
+        /* bal*/   {  0,  0,2.0,  0,1.0,  0,  0,  0,  0,3.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0,  0 },
+        /* cat*/   {1.0,2.0,0.5,  0,1.0,  0,  0,  0,  0,  0,  0,20,20,  0,  0,0.5,  0,  0,  0,  0,  0,  0 },
+        /* ber*/   {0.5,2.0,0.5,  0,3.0,  0,  0,  0,  0,  0,  0, 5,10,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* drd*/   {  0,  0,3.0,  0,1.0,  0,  0,  0,  0,2.5,2.5, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0,  0 },
     };
 
     // The weights in use, the defaults above until the table is read
@@ -107,6 +109,7 @@ namespace
         "parry %",
         "block %",
         "restricted spell damage",
+        "armor",
     };
 
     // The talents a bot can be summoned with by the pinyin of the Chinese name of each talent. The rating reads the
@@ -265,7 +268,10 @@ namespace
                     break;
                 case SPELL_AURA_MOD_RESISTANCE:
                 case SPELL_AURA_MOD_RESISTANCE_EXCLUSIVE:
-                    AddStat(value, GEAR_STAT_RESISTANCE, amount);
+                    if (spell->EffectMiscValue[effect] & SPELL_SCHOOL_MASK_NORMAL)
+                        AddStat(value, GEAR_STAT_ARMOR, amount);
+                    if (spell->EffectMiscValue[effect] & SPELL_SCHOOL_MASK_MAGIC)
+                        AddStat(value, GEAR_STAT_RESISTANCE, amount);
                     break;
                 case SPELL_AURA_MOD_DODGE_PERCENT:
                     AddStat(value, GEAR_STAT_DODGE, amount * AURA_PERCENT_FACTOR);
@@ -304,7 +310,10 @@ namespace
                     AddItemMod(value, enchant->spellid[effect], float(enchant->amount[effect]));
                     break;
                 case ITEM_ENCHANTMENT_TYPE_RESISTANCE:
-                    AddStat(value, GEAR_STAT_RESISTANCE, float(enchant->amount[effect]));
+                    if (enchant->spellid[effect] == SPELL_SCHOOL_NORMAL)
+                        AddStat(value, GEAR_STAT_ARMOR, float(enchant->amount[effect]));
+                    else
+                        AddStat(value, GEAR_STAT_RESISTANCE, float(enchant->amount[effect]));
                     break;
                 case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
                     if (enchant->spellid[effect] && castSpells.insert(enchant->spellid[effect]).second)
@@ -435,26 +444,33 @@ void LoadBotGearStatWeights()
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u playerbot gear attribute weights", count);
 }
 
-// The talent of a bot: the talents it has learned say it, and its role says it when it has learned none
-BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role)
+// The talent of a bot. The page asked for at summoning and the tank role are authoritative, because the first rows
+// of a tank build deliberately spend points in another tree. A bot without either falls back to the tree in which
+// it has learned the most talents, and then to its role.
+BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role, uint8 requestedTalentPage)
 {
     if (!me)
         return GEAR_SPEC_NONE;
 
-    int const tab = GetLearnedTalentTabPage(me);
+    int const tab = requestedTalentPage < MAX_GEAR_SPEC_TABS ? requestedTalentPage
+        : GetLearnedTalentTabPage(me);
 
     switch (me->GetClass())
     {
         case CLASS_WARRIOR:
+            if (role == ROLE_TANK)
+                return GEAR_SPEC_WARRIOR_PROTECTION;
             if (tab == 2)
                 return GEAR_SPEC_WARRIOR_PROTECTION;
             if (tab == 1)
                 return GEAR_SPEC_WARRIOR_FURY;
             if (tab == 0)
                 return GEAR_SPEC_WARRIOR_ARMS;
-            return role == ROLE_TANK ? GEAR_SPEC_WARRIOR_PROTECTION : GEAR_SPEC_WARRIOR_ARMS;
+            return GEAR_SPEC_WARRIOR_ARMS;
 
         case CLASS_PALADIN:
+            if (role == ROLE_TANK)
+                return GEAR_SPEC_PALADIN_PROTECTION;
             if (tab == 0)
                 return GEAR_SPEC_PALADIN_HOLY;
             if (tab == 1)
@@ -463,7 +479,6 @@ BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role)
                 return GEAR_SPEC_PALADIN_RETRIBUTION;
             switch (role)
             {
-                case ROLE_TANK:       return GEAR_SPEC_PALADIN_PROTECTION;
                 case ROLE_MELEE_DPS:  return GEAR_SPEC_PALADIN_RETRIBUTION;
                 default:              return GEAR_SPEC_PALADIN_HOLY;
             }
@@ -504,8 +519,10 @@ BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role)
             return GEAR_SPEC_WARLOCK;
 
         case CLASS_DRUID:
+            if (role == ROLE_TANK)
+                return GEAR_SPEC_DRUID_FERAL_BEAR;
             if (tab == 1)
-                return role == ROLE_TANK ? GEAR_SPEC_DRUID_FERAL_BEAR : GEAR_SPEC_DRUID_FERAL_CAT;
+                return GEAR_SPEC_DRUID_FERAL_CAT;
             if (tab == 2)
                 return GEAR_SPEC_DRUID_RESTORATION;
             switch (role)
@@ -690,6 +707,9 @@ void EvaluateBotGearItem(Player* me, ItemPrototype const* proto, BotGearSpec spe
     for (uint32 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
         if (proto->ItemStat[i].ItemStatType != 0)
             AddItemMod(value, proto->ItemStat[i].ItemStatType, float(proto->ItemStat[i].ItemStatValue));
+
+    if (proto->Armor)
+        AddStat(value, GEAR_STAT_ARMOR, float(proto->Armor));
 
     // The spells that the item casts while it is equipped. The ones of a random property that cast the same spell
     // are not counted twice.

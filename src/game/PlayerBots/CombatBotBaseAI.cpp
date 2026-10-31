@@ -2905,7 +2905,7 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
 
     bool const canDualWield = PrepareDualWield();
 
-    BotGearSpec const spec = GetBotGearSpec(me, m_role);
+    BotGearSpec const spec = GetBotGearSpec(me, m_role, m_requestedTalentPage);
     BotGearWeaponRules const weaponRules = GetBotWeaponRules(me, spec);
 
     std::map<uint32 /*slot*/, std::vector<BotGearCandidate>> candidatesPerSlot;
@@ -3164,7 +3164,7 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
 
 void CombatBotBaseAI::PrintGearItemScore(ChatHandler& handler, uint32 itemEntry)
 {
-    SendBotGearItemScore(me, handler, GetBotGearSpec(me, m_role), itemEntry);
+    SendBotGearItemScore(me, handler, GetBotGearSpec(me, m_role, m_requestedTalentPage), itemEntry);
 }
 
 void CombatBotBaseAI::AutoEquipGear(uint32 option)
