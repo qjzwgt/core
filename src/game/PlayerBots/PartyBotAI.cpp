@@ -58,13 +58,16 @@ enum PartyBotSpells
 // How far above the ground it aimed for a bot may stand before it calls its pet back to it.
 #define PB_DROP_LAND_TOLERANCE 2.0f
 
-// The distance that a ranged party bot keeps from the enemy that it is holding off. The room that a party has for
-// that depends on the ground that it fights on: a dungeon is small and the party stands close together, the open
-// world gives room to step back, and a battleground is the widest of the three. A battleground is an instance as
-// well, so it is the one asked for first.
+// The distance that a ranged party bot keeps while it chases and casts. The room that a party has for that depends
+// on the ground that it fights on: a dungeon is small, the open world gives more room, and a battleground is the
+// widest of the three. Running away from a target uses PB_RUN_AWAY_DISTANCE instead.
 #define PB_CHASE_DISTANCE_INSTANCE 10.0f
 #define PB_CHASE_DISTANCE_OUTDOORS 20.0f
 #define PB_CHASE_DISTANCE_BATTLEGROUND 30.0f
+
+// The distance that a party bot steps back when it runs away, and the distance that it then keeps with the chase
+// generator, is the same on every kind of ground.
+#define PB_RUN_AWAY_DISTANCE 8.0f
 
 bool PartyBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
@@ -157,7 +160,7 @@ bool PartyBotAI::IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy)
     {
         float const distance = me->GetDistance(pTarget);
         if (distance >= 15.0f && distance <= 30.0f &&
-            pTarget->GetDistance(pEnemy) >= GetChaseDistance())
+            pTarget->GetDistance(pEnemy) >= PB_RUN_AWAY_DISTANCE)
             return true;
     }
 
@@ -204,14 +207,14 @@ bool PartyBotAI::CanRunAwayFrom(Unit const* pEnemy) const
     if (!pEnemy || !pEnemy->IsAlive())
         return false;
 
-    // A root, a stun or a confusion keeps the enemy where it stands, and a snare walks slow enough that the
-    // distance that was won is kept. A fear is not counted here: a feared enemy is running away from the bot.
+    // A root, a stun or a confusion keeps the enemy where it stands. A snare alone is not enough: the enemy can
+    // still close the distance, so the bot stays and fights. A fear is not counted here either, because a feared
+    // enemy is already running away from the bot.
     bool const enemyHeld =
         pEnemy->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED) ||
         pEnemy->HasAuraType(SPELL_AURA_MOD_ROOT) ||
         pEnemy->HasAuraType(SPELL_AURA_MOD_STUN) ||
-        pEnemy->HasAuraType(SPELL_AURA_MOD_CONFUSE) ||
-        pEnemy->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED);
+        pEnemy->HasAuraType(SPELL_AURA_MOD_CONFUSE);
 
     if (!enemyHeld)
         return false;
@@ -251,7 +254,7 @@ bool PartyBotAI::RunAwayFromTarget(Unit* pEnemy)
         return true;
     }
 
-    return me->GetMotionMaster()->MoveDistance(pEnemy, GetChaseDistance());
+    return me->GetMotionMaster()->MoveDistance(pEnemy, PB_RUN_AWAY_DISTANCE);
 }
 
 bool PartyBotAI::DrinkAndEat()
@@ -2191,7 +2194,7 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 
                     if (CanRunAwayFrom(pVictim) && RunAwayFromTarget(pVictim))
                     {
-                        me->SetCasterChaseDistance(GetChaseDistance());
+                        me->SetCasterChaseDistance(PB_RUN_AWAY_DISTANCE);
                         return;
                     }
                 }
@@ -3681,7 +3684,7 @@ void PartyBotAI::UpdateInCombatAI_Druid()
                 // itself whether walking away is worth it.
                 if (CanRunAwayFrom(pVictim))
                 {
-                    me->SetCasterChaseDistance(GetChaseDistance());
+                    me->SetCasterChaseDistance(PB_RUN_AWAY_DISTANCE);
                     if (RunAwayFromTarget(pVictim))
                         return;
                 }
