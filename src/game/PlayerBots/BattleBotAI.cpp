@@ -956,6 +956,7 @@ void BattleBotAI::UpdateFlagCarrierAI()
         case CLASS_MAGE:
         {
             if (m_spells.mage.pManaShield &&
+               (me->GetHealthPercent() < 30.0f) &&
                 CanTryToCastSpell(me, m_spells.mage.pManaShield))
             {
                 me->CastSpell(me, m_spells.mage.pManaShield, false);
@@ -1740,6 +1741,7 @@ void BattleBotAI::UpdateInCombatAI_Mage()
 
         if (m_spells.mage.pManaShield &&
             IsPhysicalDamageClass(pVictim->GetClass()) &&
+           (me->GetHealthPercent() < 30.0f) &&
            (me->GetPowerPercent(POWER_MANA) > 20.0f) &&
             CanTryToCastSpell(me, m_spells.mage.pManaShield))
         {

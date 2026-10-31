@@ -65,6 +65,10 @@ enum PartyBotSpells
 #define PB_CHASE_DISTANCE_OUTDOORS 20.0f
 #define PB_CHASE_DISTANCE_BATTLEGROUND 30.0f
 
+// A ranged damage bot keeps the range of its longest common attack spell. It approaches only while the target is
+// beyond that range; it does not walk closer merely to make a short-range spell such as Fire Blast usable.
+#define PB_RANGED_DPS_DISTANCE 30.0f
+
 // The distance that a party bot steps back when it runs away, and the distance that it then keeps with the chase
 // generator, is the same on every kind of ground.
 #define PB_RUN_AWAY_DISTANCE 8.0f
@@ -153,48 +157,6 @@ Player* PartyBotAI::GetPartyLeader() const
     return nullptr;
 }
 
-bool PartyBotAI::IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy)
-{
-    if (pTarget->IsInWorld() && pTarget->IsAlive() &&
-        pTarget->GetMap() == me->GetMap())
-    {
-        float const distance = me->GetDistance(pTarget);
-        if (distance >= 15.0f && distance <= 30.0f &&
-            pTarget->GetDistance(pEnemy) >= PB_RUN_AWAY_DISTANCE)
-            return true;
-    }
-
-    return false;
-}
-
-Unit* PartyBotAI::GetDistancingTarget(Unit* pEnemy)
-{
-    if (Player* pLeader = GetPartyLeader())
-        if (IsValidDistancingTarget(pLeader, pEnemy))
-            return pLeader;
-
-    Unit* pNonTank = nullptr;
-    Group* pGroup = me->GetGroup();
-    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
-    {
-        if (Player* pMember = itr->getSource())
-        {
-            if (pMember == me)
-                continue;
-
-            if (IsValidDistancingTarget(pMember, pEnemy))
-            {
-                if (IsTankingForm(pMember->GetShapeshiftForm()) || IsWearingShield(pMember))
-                    return pMember;
-                else
-                    pNonTank = pMember;
-            }
-        }
-    }
-
-    return pNonTank;
-}
-
 // A bot of a ranged talent steps back from an enemy that came close only when the ground it wins is ground that it
 // keeps: the enemy must be held from walking after the bot, and the bot must be free to walk. Otherwise the bot
 // stands its ground and takes the attacks, going on with what its talent does - a healer goes on healing, a caster
@@ -235,11 +197,15 @@ bool PartyBotAI::CanRunAwayFrom(Unit const* pEnemy) const
     return true;
 }
 
-// The distance of the ground that the party is fighting on. A battleground is asked for first, because a
-// battleground is an instance too and the party that stands in its yard is not in a dungeon; the party that has a
-// battleground queued but has not landed keeps the distance of the ground that it is standing on.
+// A ranged damage bot keeps spell range everywhere. The other roles use the distance of the ground that the party
+// is fighting on. A battleground is asked for first, because a battleground is an instance too and the party that
+// stands in its yard is not in a dungeon; the party that has a battleground queued but has not landed keeps the
+// distance of the ground that it is standing on.
 float PartyBotAI::GetChaseDistance() const
 {
+    if (m_role == ROLE_RANGE_DPS)
+        return PB_RANGED_DPS_DISTANCE;
+
     if (me->InBattleGround())
         return PB_CHASE_DISTANCE_BATTLEGROUND;
 
@@ -252,12 +218,6 @@ float PartyBotAI::GetChaseDistance() const
 
 bool PartyBotAI::RunAwayFromTarget(Unit* pEnemy)
 {
-    if (Unit* pTarget = GetDistancingTarget(pEnemy))
-    {
-        me->MonsterMove(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ());
-        return true;
-    }
-
     return me->GetMotionMaster()->MoveDistance(pEnemy, PB_RUN_AWAY_DISTANCE);
 }
 
@@ -1263,7 +1223,8 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     {
         if (!pVictim)
         {
-            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+            if (!me->IsInCombat() &&
+                me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
                 me->GetMotionMaster()->MoveFollow(pLeader, urand(PB_MIN_FOLLOW_DIST, PB_MAX_FOLLOW_DIST), frand(PB_MIN_FOLLOW_ANGLE, PB_MAX_FOLLOW_ANGLE));
         }
         else
@@ -2164,6 +2125,7 @@ void PartyBotAI::UpdateInCombatAI_Mage()
         else if (GetAttackersInRangeCount(10.0f))
         {
             if (m_spells.mage.pManaShield &&
+               (me->GetHealthPercent() < 30.0f) &&
                (me->GetPowerPercent(POWER_MANA) > 20.0f) &&
                 CanTryToCastSpell(me, m_spells.mage.pManaShield))
             {
@@ -2198,7 +2160,7 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 
                     if (CanRunAwayFrom(pVictim) && RunAwayFromTarget(pVictim))
                     {
-                        me->SetCasterChaseDistance(PB_RUN_AWAY_DISTANCE);
+                        me->SetCasterChaseDistance(GetChaseDistance());
                         return;
                     }
                 }
@@ -3688,7 +3650,7 @@ void PartyBotAI::UpdateInCombatAI_Druid()
                 // itself whether walking away is worth it.
                 if (CanRunAwayFrom(pVictim))
                 {
-                    me->SetCasterChaseDistance(PB_RUN_AWAY_DISTANCE);
+                    me->SetCasterChaseDistance(GetChaseDistance());
                     if (RunAwayFromTarget(pVictim))
                         return;
                 }

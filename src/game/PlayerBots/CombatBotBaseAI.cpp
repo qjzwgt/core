@@ -3039,6 +3039,9 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
                 candidate.weaponDamage = GetItemWeaponDamagePerSecond(pProto);
             }
 
+            if (candidate.value.hasNegativeStat)
+                continue;
+
             candidatesPerSlot[slot].push_back(candidate);
         }
     }
@@ -3401,8 +3404,9 @@ void CombatBotBaseAI::UpdateVisualHonorRankBasedOnItems()
     me->SetByteValue(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_HIGHEST_HONOR_RANK, m_visualHonorRank);
 }
 
-// The distance of a battle bot, which is on the same ground in every battleground. A party bot answers by the
-// ground that it stands on, since a party plays in dungeons, in the open world, and in a battleground.
+// The ordinary distance of a battle bot, which is on the same ground in every battleground. BeginChasing() raises a
+// ranged damage bot to the 30 yards of its common attack spells. A party bot answers by the ground that it stands
+// on, since a party plays in dungeons, in the open world, and in a battleground.
 float CombatBotBaseAI::GetChaseDistance() const
 {
     return 25.0f;
@@ -3410,11 +3414,15 @@ float CombatBotBaseAI::GetChaseDistance() const
 
 void CombatBotBaseAI::BeginChasing(Unit* pVictim) const
 {
+    float chaseDistance = GetChaseDistance();
+    if (m_role == ROLE_RANGE_DPS && chaseDistance < 30.0f)
+        chaseDistance = 30.0f;
+
     if ((m_role == ROLE_RANGE_DPS || m_role == ROLE_HEALER) &&
         IsRangedDamageClass(me->GetClass()) &&
        !IsAttackSpeedOverridenForm(me->GetShapeshiftForm()) &&
        (me->GetPowerPercent(POWER_MANA) > 10.0f || me->GetWeaponForAttack(RANGED_ATTACK, true, true)))
-        me->SetCasterChaseDistance(GetChaseDistance());
+        me->SetCasterChaseDistance(chaseDistance);
     else if (me->HasDistanceCasterMovement())
         me->SetCasterChaseDistance(0.0f);
 

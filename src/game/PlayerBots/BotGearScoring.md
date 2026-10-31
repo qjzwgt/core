@@ -107,6 +107,7 @@ An item is a candidate only when:
   only limited by its required level;
 - the bot can use it (`Player::CanUseItem`: class, race, level, required spell, weapon proficiency) and knows the
   armour proficiency of the item.
+- no attribute of the item, after its chosen random property is applied, is negative.
 
 ## The score of an item
 

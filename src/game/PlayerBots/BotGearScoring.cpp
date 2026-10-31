@@ -155,6 +155,8 @@ namespace
     void AddStat(BotGearItemValue& value, BotGearStat stat, float amount)
     {
         value.stats[stat] += amount;
+        if (amount < 0.0f)
+            value.hasNegativeStat = true;
     }
 
     // Only a damage aura that covers every magic school is general spell damage. Auras for one or several schools
@@ -747,6 +749,9 @@ void EvaluateBotGearItem(Player* me, ItemPrototype const* proto, BotGearSpec spe
                 if (randomProp->enchant_id[i])
                     AddEnchantmentValue(me, randomProp->enchant_id[i], withProperty, propertySpells);
 
+            if (withProperty.hasNegativeStat)
+                continue;
+
             if (ScoreValue(spec, withProperty) > ScoreValue(spec, best))
             {
                 best = withProperty;
@@ -777,6 +782,11 @@ void EvaluateBotGearItem(Player* me, ItemPrototype const* proto, BotGearSpec spe
 
     value = best;
     value.randomPropertyId = bestProperty;
+
+    for (uint32 stat = 0; stat < MAX_GEAR_STATS; ++stat)
+        if (value.stats[stat] < 0.0f)
+            value.hasNegativeStat = true;
+
     value.score = ScoreValue(spec, value);
 }
 
@@ -833,6 +843,9 @@ void SendBotGearItemScore(Player* me, ChatHandler& handler, BotGearSpec spec, ui
         if (ItemRandomPropertiesEntry const* randomProp = sItemRandomPropertiesStore.LookupEntry(
                 uint32(value.randomPropertyId)))
             out << "\n    random property: " << randomProp->internalName;
+
+    if (value.hasNegativeStat)
+        out << "\n    this item has a negative attribute and is never dressed";
 
     float const damagePerSecond = GetItemWeaponDamagePerSecond(proto);
     if (damagePerSecond > 0.0f)

@@ -112,6 +112,7 @@ struct BotGearItemValue
 {
     float stats[MAX_GEAR_STATS] = {};
     int32 randomPropertyId = 0;                       // the chosen random property, 0 when the item has none
+    bool hasNegativeStat = false;                     // any attribute after the chosen random property is below zero
     float score = 0.0f;
 };
 

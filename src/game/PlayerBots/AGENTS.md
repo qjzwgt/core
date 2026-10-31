@@ -24,7 +24,8 @@ document and the code in step - it is what the maintainer reads to tune the valu
    which is what makes the items with random properties reachable. Excluded: anything with a `RequiredSkill`
    (engineering, fishing, tailoring, ...) because bots never learn trade skills, gear gated by a reputation
    standing, an honor rank, a pvp reward, a world event or a holiday, the gear of the other faction, trinkets,
-   relics, tabards and shirts.
+   relics, tabards and shirts. An item with any negative attribute, including a negative attribute from the random
+   property that the bot would put on it, is never a candidate.
 2. No pick up bound epic gear at all. Pick up bound gear of **green** or **blue** quality that comes from a quest
    or an instance is allowed only when its **item level** is at or below the level of the bot - the point is to
    keep a bot from wearing over tuned gear, so `RequiredLevel` is deliberately not the test. Gear bound when
@@ -161,19 +162,23 @@ document and the code in step - it is what the maintainer reads to tune the valu
    enemy next to the bot is not held; that is what keeps a priest healing and a warlock casting instead of walking
    backwards, and those two have no running of their own to change.
    The distance of that kiting is `PB_RUN_AWAY_DISTANCE`, eight yards on every kind of ground. It is what
-   `RunAwayFromTarget()` steps back by, what the friend that the bot runs back to must be away from the enemy
-   (`IsValidDistancingTarget()`), and what the chase generator is told to keep after the bot has stepped back. A
-   bot that already has those eight yards does not run again, so a mage whose Frost Nova holds the enemy casts from
-   that distance instead of starting another distance movement.
+   `RunAwayFromTarget()` steps back by. After that step the chase generator returns to the ordinary chasing distance,
+   so a distant target does not pull the bot back towards eight yards. A bot that already has those eight yards does
+   not run again, so a mage whose Frost Nova holds the enemy casts from that distance instead of starting another
+   distance movement. A bot in combat follows neither the party leader nor a tank: every run away from the enemy is
+   a step directly away from that enemy.
    `PartyBotAI::GetChaseDistance()` remains the ordinary distance for chasing and casting: ten yards in a dungeon
    or raid, twenty in the open world and thirty in a battleground, the battleground asked for first because it is
-   an instance too. `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle bot, which fights on the
-   same ground in every battleground. A hunter swings the melee weapon that it wears instead of running - the auto
-   attack of the core does the swinging, `UpdateAI` has taken the auto shot away from it below 8 yards, and its
-   raptor strike and mongoose bite are in the `CanReachWithMeleeAutoAttack()` branch. The three places that ask are
-   the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid casts Entangling Roots first,
-   which is the right answer for an enemy that is not held yet. The escape of a rogue that has vanished at low
-   health is not kiting and is not part of this.
+   an instance too. A ranged damage bot uses thirty yards on every kind of ground instead, so it approaches only
+   when the target is outside the range of its longest common attack spell and never walks closer for a
+   short-range spell such as Fire Blast. `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle
+   bot, which fights on the same ground in every battleground. A hunter swings the melee weapon that it wears
+   instead of running - the auto attack of the core does the swinging, `UpdateAI` has taken the auto shot away from
+   it below 8 yards, and its raptor strike and mongoose bite are in the `CanReachWithMeleeAutoAttack()` branch. The
+   three places that ask are the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid
+   casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape of a rogue
+   that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
+   cent health.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
