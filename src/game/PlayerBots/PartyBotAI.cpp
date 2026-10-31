@@ -656,8 +656,18 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
         me->HasAuraType(SPELL_AURA_MOD_STEALTH) &&
         (m_spells.rogue.pCheapShot || m_spells.rogue.pGarrote);
 
-    if (me->Attack(pVictim, !waitForStealthOpener) ||
-        (waitForStealthOpener && me->GetVictim() == pVictim))
+    if (waitForStealthOpener)
+    {
+        // Both Attack() and ChaseMovementGenerator() can start melee attacks when the target is reached. Follow
+        // movement keeps the same behind-target offset without starting an attack, so stealth survives the approach.
+        m_rogueStealthTargetGuid = pVictim->GetObjectGuid();
+        me->SetTargetGuid(m_rogueStealthTargetGuid);
+        me->GetMotionMaster()->MoveFollow(pVictim, 1.0f, M_PI_F);
+        return true;
+    }
+
+    m_rogueStealthTargetGuid.Clear();
+    if (me->Attack(pVictim, true))
     {
         BeginChasing(pVictim);
         return true;
@@ -3139,15 +3149,34 @@ void PartyBotAI::UpdateOutOfCombatAI_Rogue()
     if (EnterStealthIfNeeded(m_spells.rogue.pStealth))
         return;
 
-    if (me->GetVictim())
+    if (me->GetVictim() ||
+        (me->HasAuraType(SPELL_AURA_MOD_STEALTH) && !m_rogueStealthTargetGuid.IsEmpty()))
         UpdateInCombatAI_Rogue();
 }
 
 void PartyBotAI::UpdateInCombatAI_Rogue()
 {
     Unit* pVictim = me->GetVictim();
-    if (!pVictim)
+    if (!pVictim && !m_rogueStealthTargetGuid.IsEmpty())
+        pVictim = me->GetMap()->GetUnit(m_rogueStealthTargetGuid);
+
+    if (!pVictim || !IsValidHostileTarget(pVictim))
+    {
+        bool const hadPendingTarget = !m_rogueStealthTargetGuid.IsEmpty();
+        m_rogueStealthTargetGuid.Clear();
+        if (hadPendingTarget)
+            me->GetMotionMaster()->Clear(false, true);
         return;
+    }
+
+    if (!me->HasAuraType(SPELL_AURA_MOD_STEALTH) && !m_rogueStealthTargetGuid.IsEmpty())
+    {
+        // Stealth was lost before the opener could be cast, so the pending target becomes a normal attack.
+        m_rogueStealthTargetGuid.Clear();
+        me->GetMotionMaster()->Clear(false, true);
+        me->Attack(pVictim, true);
+        BeginChasing(pVictim);
+    }
 
     if (me->HasAuraType(SPELL_AURA_MOD_STEALTH))
     {
@@ -3160,7 +3189,10 @@ void PartyBotAI::UpdateInCombatAI_Rogue()
                 DoCastSpell(pVictim, pOpener) == SPELL_CAST_OK)
             {
                 // The opener was held back from the auto attack so that stealth could still be used.
+                m_rogueStealthTargetGuid.Clear();
+                me->GetMotionMaster()->Clear(false, true);
                 me->Attack(pVictim, true);
+                BeginChasing(pVictim);
                 return;
             }
 
@@ -3170,6 +3202,7 @@ void PartyBotAI::UpdateInCombatAI_Rogue()
         }
 
         // With neither opener learned, begin the ordinary attack and let stealth break.
+        m_rogueStealthTargetGuid.Clear();
         me->Attack(pVictim, true);
     }
     else if (m_spells.rogue.pVanish &&

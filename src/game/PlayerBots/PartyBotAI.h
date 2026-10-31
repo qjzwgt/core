@@ -117,6 +117,7 @@ public:
     bool m_resetSpellData = false;
     bool m_petDismissedForDrop = false;
     bool m_rogueVanishRetreat = false;
+    ObjectGuid m_rogueStealthTargetGuid;
     float m_dropLandingZ = 0.0f;
 };
 
