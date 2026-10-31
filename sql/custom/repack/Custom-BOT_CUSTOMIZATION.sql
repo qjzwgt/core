@@ -20,6 +20,8 @@
 -- here, so the table only needs the rows that change a value.
 -- The score of an item is the sum of (what the item gives of an attribute) x (the weight of that attribute),
 -- where one percent of hit, critical strike, dodge, parry or block counts as one unit of that attribute.
+-- The compiled defaults give no weight to attack power or to spell damage that does not cover every magic school.
+-- A row can still give either one a weight when a realm decides to rate it.
 --
 -- `spec`, the talent of the bot:
 --   0 none                     8 rogue                        16 warlock
@@ -40,6 +42,7 @@
 --   5 fixed mana               13 spell critical strike %
 --   6 fixed health             14 spell hit %
 --   7 melee attack power       15 mana per 5 sec
+--                              20 restricted spell damage
 CREATE TABLE IF NOT EXISTS `playerbot_gear_stat_weights` (
   `spec` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `stat` tinyint(3) unsigned NOT NULL DEFAULT '0',

@@ -60,6 +60,7 @@ enum BotGearStat
     GEAR_STAT_DODGE,
     GEAR_STAT_PARRY,
     GEAR_STAT_BLOCK,
+    GEAR_STAT_RESTRICTED_SPELL_DAMAGE,            // spell damage that does not cover every magic school
     MAX_GEAR_STATS
 };
 

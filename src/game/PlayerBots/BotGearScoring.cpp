@@ -24,33 +24,36 @@ namespace
 {
     // The weight of every attribute for every talent, in the order of the values of BotGearStat:
     // strength agility intellect spirit stamina mana health melee ap ranged ap spell damage healing physical crit
-    // physical hit spell crit spell hit mana per 5 resistance dodge parry block.
+    // physical hit spell crit spell hit mana per 5 resistance dodge parry block restricted spell damage.
+    // Attack power and spell damage that does not cover every magic school are deliberately worth nothing: a
+    // player who is dressing to survive and make a balanced character does not give up stamina and useful
+    // attributes for either of them.
     // The talents that were rated by hand keep the values they were given, the other ones follow the same scale,
     // and every value can be changed in the table `playerbot_gear_stat_weights` without compiling again.
     float const defaultGearStatWeights[MAX_GEAR_SPECS][MAX_GEAR_STATS] =
     {
-        /*         STR AGI INT SPI STA MAN HEA MAP RAP SPD HEL PCR PHR SCR SHR M5 RES DDG PAR BLK */
-        /* none*/  {  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
-        /* arms*/  {2.0,1.0,  0,  0,0.5,  0,0.05,1.0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0 },
-        /* fury*/  {2.0,1.0,  0,  0,0.5,  0,0.05,1.0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0 },
-        /* protw*/{1.0,1.5,  0,  0,3.0,  0, 0.3,1.5,  0,  0,  0, 5,15,  0,  0,  0,0.5,  0,  0,  0 },
-        /* holy*/  {0.5,  0,3.0,0.5,1.0,0.2, 0.1, 0,  0,  0,2.0, 0, 0,15, 5,2.0, 0, 0, 0, 0 },
-        /* protp*/{1.0,1.5,0.5,0.25,3.0,0.03,0.3,1.5,0,0.25,0, 5,15, 0, 0,1.0,0.5,0, 0, 0 },
-        /* ret*/   {2.0,1.5,1.0,0.25,1.0,0.07,0.1,1.0,0,0.5, 0,20,20, 0, 0,1.0, 0, 0, 0, 0 },
-        /* hnt*/   {  0,2.5,  0,  0,0.5,0,0.05,0,1.5, 0, 0,20,20, 0, 0,0.5, 0, 0, 0, 0 },
-        /* rg*/    {1.0,2.0,  0,  0,0.5,  0,0.05,1.0, 0,  0,  0,20,20, 0,  0,  0,  0,  0,  0,  0 },
-        /* dis*/   {  0,  0,3.0,0.5,1.0,0.2,0.1,  0,  0,  0,2.5, 0, 0,20,10,2.0, 0, 0, 0, 0 },
-        /* holyp*/ {  0,  0,3.0,0.5,1.0,0.2,0.1,  0,  0,  0,2.5, 0, 0,20, 5,2.0, 0, 0, 0, 0 },
-        /* shd*/   {  0,  0,1.0,0.5,0.5,0.07,0.1, 0,  0,1.0, 0,  0, 0,20,20,1.0, 0, 0, 0, 0 },
-        /* ele*/   {  0,  0,1.0,0.5,0.5,0.07,0.1, 0,  0,1.0, 0,  0, 0,20,20,1.0, 0, 0, 0, 0 },
-        /* enh*/   {2.0,1.5,1.0,  0,0.5,0.07,0.05,1.0,0,0.5,0.5,15,15,0, 0,  0,  0, 0, 0, 0 },
-        /* shm*/   {  0,  0,3.0,1.0,1.0,0.2,0.1,  0,  0,  0,2.5, 0, 0,15, 5,2.0, 0, 0, 0, 0 },
-        /* mge*/   {  0,  0,1.0,  0,0.5,0.07,0.05,0,  0,1.0, 0,  0, 0,20,20, 0,  0, 0, 0, 0 },
-        /* wlk*/   {  0,  0,1.0,0.25,1.0,0.07,0.1,0,  0,1.0, 0,  0, 0,20,20,0.5, 0, 0, 0, 0 },
-        /* bal*/   {  0,  0,1.0,0.5,1.0,0.07,0.1, 0,  0,1.0, 0,  0, 0,20,20,1.0, 0, 0, 0, 0 },
-        /* cat*/   {1.0,2.0,0.5,0.25,1.0,0.03,0.1,1.5,0, 0,  0,20,20, 0,  0,0.5, 0, 0, 0, 0 },
-        /* ber*/   {0.5,2.0,0.5,  0,3.0,0.03,0.3,1.0, 0,  0,  0, 5,10, 0,  0,  0,0.5, 0, 0, 0 },
-        /* drd*/   {  0,  0,3.0,1.0,1.0,0.2,0.1,  0,  0,  0,2.5, 0, 0,15, 5,2.0, 0, 0, 0, 0 },
+        /*         STR AGI INT SPI STA MAN HEA MAP RAP SPD HEL PCR PHR SCR SHR M5 RES DDG PAR BLK SSD */
+        /* none*/  {  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* arms*/  {2.0,1.0,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* fury*/  {2.0,1.0,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* protw*/{1.0,1.5,  0,  0,3.0,  0, 0.3,  0,  0,  0,  0, 5,15,  0,  0,  0,0.5,  0,  0,  0,  0 },
+        /* holy*/  {0.5,  0,3.0,0.5,1.0,0.2, 0.1,  0,  0,  0,2.0, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0 },
+        /* protp*/{1.0,1.5,0.5,0.25,3.0,0.03,0.3,  0,  0,  0,  0, 5,15,  0,  0,1.0,0.5,  0,  0,  0,  0 },
+        /* ret*/   {2.0,1.5,1.0,0.25,1.0,0.07,0.1,  0,  0,  0,  0,20,20,  0,  0,1.0,  0,  0,  0,  0,  0 },
+        /* hnt*/   {  0,2.5,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,0.5,  0,  0,  0,  0,  0 },
+        /* rg*/    {1.0,2.0,  0,  0,0.5,  0,0.05,  0,  0,  0,  0,20,20,  0,  0,  0,  0,  0,  0,  0,  0 },
+        /* dis*/   {  0,  0,3.0,0.5,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,20,10,2.0,  0,  0,  0,  0,  0 },
+        /* holyp*/ {  0,  0,3.0,0.5,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,20, 5,2.0,  0,  0,  0,  0,  0 },
+        /* shd*/   {  0,  0,1.0,0.5,0.5,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0 },
+        /* ele*/   {  0,  0,1.0,0.5,0.5,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0 },
+        /* enh*/   {2.0,1.5,1.0,  0,0.5,0.07,0.05,  0,  0,0.5,0.5,15,15, 0, 0,  0,  0,  0,  0,  0,  0 },
+        /* shm*/   {  0,  0,3.0,1.0,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0 },
+        /* mge*/   {  0,  0,1.0,  0,0.5,0.07,0.05,  0,  0,1.0,  0,  0, 0,20,20,  0,  0,  0,  0,  0,  0 },
+        /* wlk*/   {  0,  0,1.0,0.25,1.0,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,0.5,  0,  0,  0,  0,  0 },
+        /* bal*/   {  0,  0,1.0,0.5,1.0,0.07,0.1,  0,  0,1.0,  0,  0, 0,20,20,1.0,  0,  0,  0,  0,  0 },
+        /* cat*/   {1.0,2.0,0.5,0.25,1.0,0.03,0.1,  0,  0,  0,  0,20,20,  0,  0,0.5,  0,  0,  0,  0,  0 },
+        /* ber*/   {0.5,2.0,0.5,  0,3.0,0.03,0.3,  0,  0,  0,  0, 5,10,  0,  0,  0,0.5,  0,  0,  0,  0 },
+        /* drd*/   {  0,  0,3.0,1.0,1.0,0.2, 0.1,  0,  0,  0,2.5, 0, 0,15, 5,2.0,  0,  0,  0,  0,  0 },
     };
 
     // The weights in use, the defaults above until the table is read
@@ -103,6 +106,7 @@ namespace
         "dodge %",
         "parry %",
         "block %",
+        "restricted spell damage",
     };
 
     // The talents a bot can be summoned with by the pinyin of the Chinese name of each talent. The rating reads the
@@ -148,6 +152,14 @@ namespace
     void AddStat(BotGearItemValue& value, BotGearStat stat, float amount)
     {
         value.stats[stat] += amount;
+    }
+
+    // Only a damage aura that covers every magic school is general spell damage. Auras for one or several schools
+    // are counted apart from those, so the default weights can leave them out without discarding general spell
+    // damage.
+    bool IsRestrictedSpellDamage(uint32 schoolMask)
+    {
+        return schoolMask != SPELL_SCHOOL_MASK_MAGIC;
     }
 
     // One of the stats of an item, both the ones of the item and the ones that a random property adds with
@@ -214,9 +226,17 @@ namespace
                     AddStat(value, GEAR_STAT_RANGED_ATTACK_POWER, amount);
                     break;
                 case SPELL_AURA_MOD_DAMAGE_DONE:
-                    // The auras of the items raise both the damage and the healing of the spells
-                    AddStat(value, GEAR_STAT_SPELL_DAMAGE, amount);
-                    AddStat(value, GEAR_STAT_HEALING, amount);
+                    // Restricted damage is not the general spell damage that a balanced caster wants.
+                    if (IsRestrictedSpellDamage(spell->EffectMiscValue[effect]))
+                    {
+                        AddStat(value, GEAR_STAT_RESTRICTED_SPELL_DAMAGE, amount);
+                    }
+                    else
+                    {
+                        // The general auras raise both the damage and the healing of the spells
+                        AddStat(value, GEAR_STAT_SPELL_DAMAGE, amount);
+                        AddStat(value, GEAR_STAT_HEALING, amount);
+                    }
                     break;
                 case SPELL_AURA_MOD_HEALING_DONE:
                     AddStat(value, GEAR_STAT_HEALING, amount);

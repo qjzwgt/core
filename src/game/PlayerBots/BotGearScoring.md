@@ -120,6 +120,13 @@ The attributes are multiplied by the weight they have for the talent of the bot 
 one unit per percent. The compiled weights are in `defaultGearStatWeights` and follow the scale "1% of hit or
 critical strike is worth 20 points"; the values are meant to be adjusted, they are a starting point.
 
+Attack power, both melee and ranged, has a compiled weight of zero. So does every kind of restricted spell damage:
+damage for one school and damage that covers more than one school but not all of them are collected as
+`GEAR_STAT_RESTRICTED_SPELL_DAMAGE` rather than as general spell damage. `.partybot gearscore` still shows it and a
+realm can give it a weight in `playerbot_gear_stat_weights`. Only an aura that covers every magic school keeps the
+general spell-damage weight. This keeps a bot from giving up stamina and useful attributes for attack power or for
+damage that only part of its spells use.
+
 Not rated: the on use and combat procs of an item, the set bonuses, the enchantments of the items (the items are
 created new), the weapon skills and the defense rating (only the dodge, parry and block percentages of an item are
 visible). Bots do not wear trinkets, so their effects are not needed.
