@@ -2253,6 +2253,24 @@ void PartyBotAI::UpdateInCombatAI_Mage()
             }
         }
 
+        bool const enemyHeld =
+            pVictim->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED) ||
+            pVictim->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+            pVictim->HasAuraType(SPELL_AURA_MOD_STUN) ||
+            pVictim->HasAuraType(SPELL_AURA_MOD_CONFUSE);
+        bool const hasEnoughDistance = me->GetCombatDistance(pVictim) >= PB_RUN_AWAY_DISTANCE;
+        if (enemyHeld && hasEnoughDistance &&
+            (me->IsMoving() ||
+             me->GetMotionMaster()->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE))
+        {
+            // The distance move has done its job. Remove its movement before the spell so a stale chase or distance
+            // generator cannot leave the mage facing the target without casting.
+            if (!me->IsStopped())
+                me->StopMoving();
+            me->GetMotionMaster()->Clear(false, true);
+            me->GetMotionMaster()->MoveIdle();
+        }
+
         if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE)
             return;
 
@@ -3088,6 +3106,9 @@ bool PartyBotAI::ShouldEnterStealth() const
         return false;
 
     if (m_rogueVanishRetreat)
+        return true;
+
+    if (!m_rogueStealthTargetGuid.IsEmpty())
         return true;
 
     if (me->GetVictim() || me->InBattleGround() || me->IsFFAPvP())

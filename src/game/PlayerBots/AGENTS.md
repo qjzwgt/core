@@ -166,7 +166,8 @@ document and the code in step - it is what the maintainer reads to tune the valu
    so a distant target does not pull the bot back towards eight yards. A bot that already has those eight yards does
    not run again, so a mage whose Frost Nova holds the enemy casts from that distance instead of starting another
    distance movement. A bot in combat follows neither the party leader nor a tank: every run away from the enemy is
-   a step directly away from that enemy.
+   a step directly away from that enemy. Once the mage reaches eight yards from a held target, it stops and clears
+   the distance or chase generator before beginning the Frostbolt cast.
    `PartyBotAI::GetChaseDistance()` remains the ordinary distance for chasing and casting: ten yards in a dungeon
    or raid, twenty in the open world and thirty in a battleground, the battleground asked for first because it is
    an instance too. A ranged damage bot uses thirty yards on every kind of ground instead, so it approaches only
