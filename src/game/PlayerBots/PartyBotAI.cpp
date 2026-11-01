@@ -689,6 +689,49 @@ Unit* PartyBotAI::GetMarkedTarget(RaidTargetIcon mark) const
     return nullptr;
 }
 
+Unit* PartyBotAI::SelectOnlyControlledHostileTarget() const
+{
+    std::list<Unit*> targets;
+    me->GetEnemyListInRadiusAround(me, 50.0f, targets);
+
+    Unit* pOnlyTarget = nullptr;
+    for (Unit* pTarget : targets)
+    {
+        if (!pTarget->IsInCombat() || !me->IsHostileTo(pTarget) ||
+            !pTarget->IsValidAttackTarget(me) ||
+            !pTarget->IsVisibleForOrDetect(me, me, false) ||
+            pTarget->IsTotalImmune() ||
+            pTarget->GetTransport() != me->GetTransport())
+            continue;
+
+        if (pOnlyTarget)
+            return nullptr;
+
+        pOnlyTarget = pTarget;
+    }
+
+    return pOnlyTarget && pOnlyTarget->HasBreakableByDamageCrowdControlAura() ? pOnlyTarget : nullptr;
+}
+
+bool PartyBotAI::IsValidHostileTargetForAttack(Unit const* pTarget) const
+{
+    if (!pTarget)
+        return false;
+
+    return IsValidHostileTarget(pTarget) || SelectOnlyControlledHostileTarget() == pTarget;
+}
+
+bool PartyBotAI::HasMeleeAttackerInRange() const
+{
+    for (Unit* pAttacker : me->GetAttackers())
+    {
+        if (pAttacker->GetVictim() == me && pAttacker->CanReachWithMeleeAutoAttack(me))
+            return true;
+    }
+
+    return false;
+}
+
 bool PartyBotAI::IsMarkedForCrowdControl(Unit const* pTarget) const
 {
     for (RaidTargetIcon mark : m_marksToCC)
@@ -773,6 +816,9 @@ Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
             if (IsValidHostileTarget(pPetAttacker))
                 return pPetAttacker;
     }
+
+    if (Unit* pControlledTarget = SelectOnlyControlledHostileTarget())
+        return pControlledTarget;
 
     return nullptr;
 }
@@ -1114,7 +1160,10 @@ void PartyBotAI::UpdateAI(uint32 const diff)
 
     if (me->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL))
     {
-        BreakCrowdControlEffects();
+        // A party mage waits the effect out. Ice Block is kept for the low-health branch of its combat routine, and
+        // neither it nor Blink is used to leave a control effect.
+        if (me->GetClass() != CLASS_MAGE)
+            BreakCrowdControlEffects();
         return;
     }
 
@@ -1253,7 +1302,7 @@ void PartyBotAI::UpdateAI(uint32 const diff)
 
     if (GetRole() != ROLE_HEALER)
     {
-        if (!pVictim || !IsValidHostileTarget(pVictim))
+        if (!pVictim || !IsValidHostileTargetForAttack(pVictim))
         {
             if (pVictim)
                 me->AttackStop();
@@ -2183,10 +2232,17 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 {
     if (Unit* pVictim = me->GetVictim())
     {
-        // Fire Blast is only a finisher. Cone of Cold shares the multi-target condition of Arcane Explosion.
-        // Frostbolt is the single-target filler, with Fireball as its fallback.
+        if (m_spells.mage.pCounterspell &&
+            pVictim->IsNonMeleeSpellCasted(false, false, true) &&
+            CanTryToCastSpell(pVictim, m_spells.mage.pCounterspell))
+        {
+            if (DoCastSpell(pVictim, m_spells.mage.pCounterspell) == SPELL_CAST_OK)
+                return;
+        }
+
+        // Fire Blast has priority whenever it is ready. Cone of Cold shares the multi-target condition of Arcane
+        // Explosion. Frostbolt is the single-target filler, with Fireball as its fallback.
         if (m_spells.mage.pFireBlast &&
-            (pVictim->GetHealthPercent() < 5.0f) &&
             CanTryToCastSpell(pVictim, m_spells.mage.pFireBlast))
         {
             if (DoCastSpell(pVictim, m_spells.mage.pFireBlast) == SPELL_CAST_OK)
@@ -2200,6 +2256,50 @@ void PartyBotAI::UpdateInCombatAI_Mage()
         {
             if (DoCastSpell(pVictim, m_spells.mage.pConeofCold) == SPELL_CAST_OK)
                 return;
+        }
+
+        if (m_spells.mage.pEvocation &&
+           (me->GetPowerPercent(POWER_MANA) < 20.0f) &&
+           !HasMeleeAttackerInRange() &&
+            CanTryToCastSpell(me, m_spells.mage.pEvocation))
+        {
+            if (DoCastSpell(me, m_spells.mage.pEvocation) == SPELL_CAST_OK)
+                return;
+        }
+
+        SpellEntry const* pRangeSpell = m_spells.mage.pFrostbolt ?
+            m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
+        if (GetAttackersInRangeCount(10.0f))
+        {
+            if (m_spells.mage.pManaShield &&
+               (me->GetHealthPercent() < 30.0f) &&
+               (me->GetPowerPercent(POWER_MANA) > 20.0f) &&
+                CanTryToCastSpell(me, m_spells.mage.pManaShield))
+            {
+                if (DoCastSpell(me, m_spells.mage.pManaShield) == SPELL_CAST_OK)
+                    return;
+            }
+
+            if ((GetRole() != ROLE_MELEE_DPS) &&
+                (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE) &&
+                !me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE))
+            {
+                if (m_spells.mage.pFrostNova &&
+                   (me->GetCombatDistance(pVictim) < PB_RUN_AWAY_DISTANCE) &&
+                   !pVictim->HasUnitState(UNIT_STATE_ROOT) &&
+                   !pVictim->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL) &&
+                    CanTryToCastSpell(me, m_spells.mage.pFrostNova))
+                {
+                    DoCastSpell(me, m_spells.mage.pFrostNova);
+                }
+
+                if (CanRunAwayFrom(pVictim) && RunAwayFromTarget(pVictim))
+                {
+                    me->SetCasterChaseDistance(pRangeSpell ?
+                        GetSpellMaxRangeForBot(pRangeSpell) : GetChaseDistance());
+                    return;
+                }
+            }
         }
 
         if (m_spells.mage.pFrostbolt &&
@@ -2241,59 +2341,11 @@ void PartyBotAI::UpdateInCombatAI_Mage()
                 return;
         }
 
-        SpellEntry const* pRangeSpell = m_spells.mage.pFrostbolt ?
-            m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
         if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE &&
             pRangeSpell &&
             !IsTargetInSpellRange(pVictim, pRangeSpell))
         {
             BeginChasing(pVictim);
-        }
-        else if (GetAttackersInRangeCount(10.0f))
-        {
-            if (m_spells.mage.pManaShield &&
-               (me->GetHealthPercent() < 30.0f) &&
-               (me->GetPowerPercent(POWER_MANA) > 20.0f) &&
-                CanTryToCastSpell(me, m_spells.mage.pManaShield))
-            {
-                if (DoCastSpell(me, m_spells.mage.pManaShield) == SPELL_CAST_OK)
-                    return;
-            }
-
-            if ((GetRole() != ROLE_MELEE_DPS) &&
-                (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE))
-            {
-                if (m_spells.mage.pBlink &&
-                    (me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE) ||
-                        me->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED)) &&
-                    CanTryToCastSpell(me, m_spells.mage.pBlink))
-                {
-                    if (me->GetMotionMaster()->GetCurrentMovementGeneratorType())
-                        me->GetMotionMaster()->Clear();
-
-                    if (DoCastSpell(me, m_spells.mage.pBlink) == SPELL_CAST_OK)
-                        return;
-                }
-
-                if (!me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE))
-                {
-                    if (m_spells.mage.pFrostNova &&
-                       (me->GetCombatDistance(pVictim) < PB_RUN_AWAY_DISTANCE) &&
-                       !pVictim->HasUnitState(UNIT_STATE_ROOT) &&
-                       !pVictim->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL) &&
-                        CanTryToCastSpell(me, m_spells.mage.pFrostNova))
-                    {
-                        DoCastSpell(me, m_spells.mage.pFrostNova);
-                    }
-
-                    if (CanRunAwayFrom(pVictim) && RunAwayFromTarget(pVictim))
-                    {
-                        me->SetCasterChaseDistance(pRangeSpell ?
-                            GetSpellMaxRangeForBot(pRangeSpell) : GetChaseDistance());
-                        return;
-                    }
-                }
-            }
         }
 
         if (me->GetEnemyCountInRadiusAround(me, 10.0f) > 1)
@@ -2334,14 +2386,6 @@ void PartyBotAI::UpdateInCombatAI_Mage()
         if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE)
             return;
 
-        if (m_spells.mage.pCounterspell &&
-            pVictim->IsNonMeleeSpellCasted(false, false, true) &&
-            CanTryToCastSpell(pVictim, m_spells.mage.pCounterspell))
-        {
-            if (DoCastSpell(pVictim, m_spells.mage.pCounterspell) == SPELL_CAST_OK)
-                return;
-        }
-
         if (m_spells.mage.pBlizzard &&
            (me->GetEnemyCountInRadiusAround(pVictim, 10.0f) > 2) &&
             CanTryToCastSpell(pVictim, m_spells.mage.pBlizzard))
@@ -2377,15 +2421,6 @@ void PartyBotAI::UpdateInCombatAI_Mage()
             CanTryToCastSpell(me, m_spells.mage.pPresenceOfMind))
         {
             if (DoCastSpell(me, m_spells.mage.pPresenceOfMind) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.mage.pEvocation &&
-           (me->GetPowerPercent(POWER_MANA) < 30.0f) &&
-           (GetAttackersInRangeCount(10.0f) == 0) &&
-            CanTryToCastSpell(me, m_spells.mage.pEvocation))
-        {
-            if (DoCastSpell(me, m_spells.mage.pEvocation) == SPELL_CAST_OK)
                 return;
         }
 

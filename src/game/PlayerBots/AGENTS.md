@@ -166,10 +166,12 @@ document and the code in step - it is what the maintainer reads to tune the valu
    Frostbolt, or of Fireball when Frostbolt is not learned, so a distant target does not pull the mage back towards
    eight yards. A bot that already has those eight yards does not run again, so a mage whose Frost Nova holds the
    enemy casts from that distance instead of starting another distance movement. The mage casts Frost Nova only when
-   the target is closer than eight yards. A bot in combat follows neither the party leader nor a tank: every run away
-   from the enemy is a step directly away from that enemy. Once the mage reaches eight yards from a held target, it
-   stops and clears the distance or chase generator before beginning the Frostbolt cast. Finishing a distance move
-   calls the player AI immediately, so the mage does not wait for the next one-second party-bot update.
+   the target is closer than eight yards, and asks for that move before its Frostbolt filler so neither a Frost Nova
+   nor a Frostbite root leaves the mage standing in melee to cast. A bot in combat follows neither the party leader
+   nor a tank: every run away from the enemy is a step directly away from that enemy. Once the mage reaches eight
+   yards from a held target, it stops and clears the distance or chase generator before beginning the Frostbolt cast.
+   Finishing a distance move calls the player AI immediately, so the mage does not wait for the next one-second
+   party-bot update.
    `PartyBotAI::GetChaseDistance()` remains the ordinary distance for chasing and casting: ten yards in a dungeon
    or raid, twenty in the open world and thirty in a battleground, the battleground asked for first because it is
    an instance too. A mage uses the maximum range of its learned Frostbolt, or Fireball when Frostbolt is absent,
@@ -184,13 +186,15 @@ document and the code in step - it is what the maintainer reads to tune the valu
    casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape of a rogue
    that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
    cent health. `AttackStart()` keeps a mage out of the melee attacking state, so it never swings at an enemy that
-   closes while it is between spells. On entering its class combat routine, a mage casts Fire Blast only when the
-   target is below five per cent health, then Frostbolt; without Frostbolt it falls back to Fireball, as it also does
-   when the target is immune to Frostbolt. Cone of Cold is used under the same multi-target condition as Arcane
-   Explosion. The movement slow that Frostbolt leaves on the target does not hold the next Frostbolt back: a bot
-   skips a spell for its existing aura only when that aura is not the by-product of a direct damage spell, or when
-   the aura itself is periodic. Scorch is never cast. The generic crowd-control, dispel, movement and marked-target
-   work that runs before the class routine still comes first.
+   closes while it is between spells. On entering its class combat routine, a mage interrupts the current cast of its
+   target with Counterspell, casts Fire Blast whenever it is ready, and otherwise uses Frostbolt; without Frostbolt
+   it falls back to Fireball, as it also does when the target is immune to Frostbolt. At less than twenty per cent
+   mana it casts Evocation whenever no attacker can reach it with a melee attack. Cone of Cold is used under the same
+   multi-target condition as Arcane Explosion. The movement slow that Frostbolt leaves on the target does not hold
+   the next Frostbolt back: a bot skips a spell for its existing aura only when that aura is not the by-product of a
+   direct damage spell, or when the aura itself is periodic. A party mage never Blinks or uses Ice Block to leave a
+   control effect; Ice Block stays for the below-ten-per-cent health branch. Scorch is never cast. The generic
+   crowd-control, dispel, movement and marked-target work that runs before the class routine still comes first.
 13. A party rogue opens only with Cheap Shot, falling back to Garrote only when Cheap Shot is not learned. With
    neither opener it does not hold an automatic attack back for stealth. While a rogue with stealth and an opener is
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`
@@ -210,6 +214,11 @@ document and the code in step - it is what the maintainer reads to tune the valu
    New party and battle bots, party bots loaded from the database, and party bots that level up learn the ordinary
    trainer spells of their current level. The trainer sync runs again only when the level changes. Quest-only class
    abilities are not trainer spells and are not covered by it.
+
+14. A breakable-by-damage control effect normally keeps a party bot from selecting that unit as its attack target.
+    When the only attackable hostile unit within fifty yards is in combat and held by such an effect, the bot instead
+    selects that unit and attacks it, which may break the control. A second hostile unit in range returns target
+    selection to the ordinary rule, so a bot does not break a sheep or a blind while there is another target to use.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

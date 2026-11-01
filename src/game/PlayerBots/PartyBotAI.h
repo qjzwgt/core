@@ -60,6 +60,9 @@ public:
     Player* SelectResurrectionTarget() const;
     Player* SelectShieldTarget() const;
     Unit* GetMarkedTarget(RaidTargetIcon mark) const;
+    Unit* SelectOnlyControlledHostileTarget() const;
+    bool IsValidHostileTargetForAttack(Unit const* pTarget) const;
+    bool HasMeleeAttackerInRange() const;
     bool IsMarkedForCrowdControl(Unit const* pTarget) const;
     uint8 CountNonRangedAttackersInRange(float range) const;
     uint8 CountUnmarkedEnemiesInRange(float range) const;
