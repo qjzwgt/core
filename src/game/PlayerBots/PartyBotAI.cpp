@@ -2183,6 +2183,38 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 {
     if (Unit* pVictim = me->GetVictim())
     {
+        // Fire Blast leads the damage order. Cone of Cold follows for one target or many and may be cast while moving;
+        // Frostbolt is the filler, with Fireball as its fallback.
+        if (m_spells.mage.pFireBlast &&
+            CanTryToCastSpell(pVictim, m_spells.mage.pFireBlast))
+        {
+            if (DoCastSpell(pVictim, m_spells.mage.pFireBlast) == SPELL_CAST_OK)
+                return;
+        }
+
+        if (m_spells.mage.pConeofCold &&
+            m_spells.mage.pConeofCold->IsTargetInRange(me, pVictim) &&
+            CanTryToCastSpell(pVictim, m_spells.mage.pConeofCold))
+        {
+            if (DoCastSpell(pVictim, m_spells.mage.pConeofCold) == SPELL_CAST_OK)
+                return;
+        }
+
+        if (m_spells.mage.pFrostbolt &&
+            CanTryToCastSpell(pVictim, m_spells.mage.pFrostbolt))
+        {
+            if (DoCastSpell(pVictim, m_spells.mage.pFrostbolt) == SPELL_CAST_OK)
+                return;
+        }
+
+        if (ShouldUseFireballInsteadOfFrostbolt(pVictim) &&
+            m_spells.mage.pFireball &&
+            CanTryToCastSpell(pVictim, m_spells.mage.pFireball))
+        {
+            if (DoCastSpell(pVictim, m_spells.mage.pFireball) == SPELL_CAST_OK)
+                return;
+        }
+
         if (m_spells.mage.pCombustion &&
             CanTryToCastSpell(me, m_spells.mage.pCombustion))
         {
@@ -2259,13 +2291,6 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 
         if (me->GetEnemyCountInRadiusAround(me, 10.0f) > 1)
         {
-            if (m_spells.mage.pConeofCold && !me->IsMoving() &&
-                CanTryToCastSpell(me, m_spells.mage.pConeofCold))
-            {
-                if (DoCastSpell(pVictim, m_spells.mage.pConeofCold) == SPELL_CAST_OK)
-                    return;
-            }
-
             if (m_spells.mage.pBlastWave &&
                 CanTryToCastSpell(me, m_spells.mage.pBlastWave))
             {
@@ -2345,36 +2370,6 @@ void PartyBotAI::UpdateInCombatAI_Mage()
             CanTryToCastSpell(me, m_spells.mage.pPresenceOfMind))
         {
             if (DoCastSpell(me, m_spells.mage.pPresenceOfMind) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.mage.pScorch &&
-           (pVictim->GetHealthPercent() < 20.0f) &&
-            CanTryToCastSpell(pVictim, m_spells.mage.pScorch))
-        {
-            if (DoCastSpell(pVictim, m_spells.mage.pScorch) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.mage.pFrostbolt &&
-            CanTryToCastSpell(pVictim, m_spells.mage.pFrostbolt))
-        {
-            if (DoCastSpell(pVictim, m_spells.mage.pFrostbolt) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.mage.pFireBlast &&
-            CanTryToCastSpell(pVictim, m_spells.mage.pFireBlast))
-        {
-            if (DoCastSpell(pVictim, m_spells.mage.pFireBlast) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (ShouldUseFireballInsteadOfFrostbolt(pVictim) &&
-            m_spells.mage.pFireball &&
-            CanTryToCastSpell(pVictim, m_spells.mage.pFireball))
-        {
-            if (DoCastSpell(pVictim, m_spells.mage.pFireball) == SPELL_CAST_OK)
                 return;
         }
 

@@ -408,7 +408,6 @@ public:
             SpellEntry const* pPresenceOfMind;
             SpellEntry const* pArcanePower;
             SpellEntry const* pRemoveLesserCurse;
-            SpellEntry const* pScorch;
             SpellEntry const* pPyroblast;
             SpellEntry const* pEvocation;
             SpellEntry const* pIceBlock;

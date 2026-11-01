@@ -767,11 +767,6 @@ void CombatBotBaseAI::PopulateSpellData()
                     if (IsHigherRankSpell(m_spells.mage.pRemoveLesserCurse))
                         m_spells.mage.pRemoveLesserCurse = pSpellEntry;
                 }
-                else if (pSpellEntry->SpellName[0].find("Scorch") != std::string::npos)
-                {
-                    if (IsHigherRankSpell(m_spells.mage.pScorch))
-                        m_spells.mage.pScorch = pSpellEntry;
-                }
                 else if (pSpellEntry->SpellName[0].find("Pyroblast") != std::string::npos)
                 {
                     if (IsHigherRankSpell(m_spells.mage.pPyroblast))

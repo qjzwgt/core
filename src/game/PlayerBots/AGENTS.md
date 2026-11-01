@@ -181,8 +181,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape of a rogue
    that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
    cent health. `AttackStart()` keeps a mage out of the melee attacking state, so it never swings at an enemy that
-   closes while it is between spells. A frost mage casts Frostbolt for a single target and uses Fireball only when it
-   has not learned Frostbolt or when the target is immune to Frostbolt, as a water elemental is.
+   closes while it is between spells. On entering its class combat routine, a mage casts Fire Blast first when it is
+   in range, then Cone of Cold even against one target and while moving, and then Frostbolt; without Frostbolt it
+   falls back to Fireball, as it also does when the target is immune to Frostbolt. Scorch is never cast. The generic
+   crowd-control, dispel, movement and marked-target work that runs before the class routine still comes first.
 13. A party rogue opens only with Cheap Shot, falling back to Garrote only when Cheap Shot is not learned. With
    neither opener it does not hold an automatic attack back for stealth. While a rogue with stealth and an opener is
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`
