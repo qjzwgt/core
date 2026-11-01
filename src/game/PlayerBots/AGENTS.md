@@ -102,11 +102,13 @@ document and the code in step - it is what the maintainer reads to tune the valu
    A rank whose spell the Spell.dbc of the running patch does not have is passed over, so a patch of a low maximum
    level keeps the ranks that it has. The core sits down the one that eats and takes the buff away from a character
    that stands up again (`AURA_INTERRUPT_STANDING_CANCELS`), so the update does not stand a bot up while it still
-   needs its meal, and a bot called into combat stops eating. The bandage is a real item, and its stack is put in
-   the bags of the bot when the bags have none, as the ammo of a hunter is put in the quiver. The bandage of a bot
-   is the tier whose first aid rank (`required_skill_rank` of the item) the first aid of a player of that level has
-   reached; those levels are the table `bandageTiers` of `CombatBotBaseAI.cpp`. The three tables are some of the few
-   places of this subsystem where item and spell ids are written in C++ - to tune the tiers means moving them into
+   needs its meal, and a bot called into combat stops eating. When another member of the group enters combat, an
+   out-of-combat bot keeps recovering only while its health or mana is at or below thirty per cent. Once both are
+   above thirty per cent it stands up and joins the fight. The bandage is a real item, and its stack is put in the
+   bags of the bot when the bags have none, as the ammo of a hunter is put in the quiver. The bandage of a bot is the
+   tier whose first aid rank (`required_skill_rank` of the item) the first aid of a player of that level has reached;
+   those levels are the table `bandageTiers` of `CombatBotBaseAI.cpp`. The three tables are some of the few places of
+   this subsystem where item and spell ids are written in C++ - to tune the tiers means moving them into
    `sql/custom/repack/`, not keeping a second list. A bot does not learn the first aid skill: the core checks the
    `RequiredSkill` of an item when it loads the prototypes and never when the item is used.
 10. A bot rides the mount of its own race, or the mount of its class for a paladin and a warlock, and it calls the
@@ -185,18 +187,19 @@ document and the code in step - it is what the maintainer reads to tune the valu
    three places that ask are the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid
    casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape of a rogue
    that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
-   cent health. `AttackStart()` keeps a mage out of the melee attacking state, so it never swings at an enemy that
-   closes while it is between spells. On entering its class combat routine, a mage interrupts the current cast of its
-   target with Counterspell and casts Fire Blast whenever it is ready in combat, but never against a frozen target.
-   It otherwise uses Frostbolt; without Frostbolt it falls back to Fireball, as it also does when the target is
-   immune to Frostbolt. A non-elite target below two per cent health is finished with the wand when Fire Blast is not
-   available. At less than twenty per cent mana the mage casts Evocation whenever no attacker can reach it with a
-   melee attack. Cone of Cold is used under the same multi-target condition as Arcane Explosion. The movement slow
-   that Frostbolt leaves on the target does not hold the next Frostbolt back: a bot skips a spell for its existing
-   aura only when that aura is not the by-product of a direct damage spell, or when the aura itself is periodic. A
-   party mage never Blinks or uses Ice Block to leave a control effect; Ice Block stays for the below-ten-per-cent
-   health branch. Scorch is never cast. The generic crowd-control, dispel, movement and marked-target work that runs
-   before the class routine still comes first.
+   cent health. On every update, in combat and out of it, a mage that is not mounted checks for Ice Barrier and casts
+   it when the buff is absent and the spell is usable. `AttackStart()` keeps a mage out of the melee attacking state,
+   so it never swings at an enemy that closes while it is between spells. On entering its class combat routine, a
+   mage interrupts the current cast of its target with Counterspell and casts Fire Blast whenever it is ready in
+   combat, but never against a frozen target. It otherwise uses Frostbolt; without Frostbolt it falls back to
+   Fireball, as it also does when the target is immune to Frostbolt. A non-elite target below two per cent health is
+   finished with the wand when Fire Blast is not available. At less than twenty per cent mana the mage casts
+   Evocation whenever no attacker can reach it with a melee attack. Cone of Cold is used under the same multi-target
+   condition as Arcane Explosion. The movement slow that Frostbolt leaves on the target does not hold the next
+   Frostbolt back: a bot skips a spell for its existing aura only when that aura is not the by-product of a direct
+   damage spell, or when the aura itself is periodic. A party mage never Blinks or uses Ice Block to leave a control
+   effect; Ice Block stays for the below-ten-per-cent health branch. Scorch is never cast. The generic
+   crowd-control, dispel, movement and marked-target work that runs before the class routine still comes first.
 13. A party rogue opens only with Cheap Shot, falling back to Garrote only when Cheap Shot is not learned. With
    neither opener it does not hold an automatic attack back for stealth. While a rogue with stealth and an opener is
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`

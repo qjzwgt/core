@@ -67,6 +67,7 @@ public:
     uint8 CountNonRangedAttackersInRange(float range) const;
     uint8 CountUnmarkedEnemiesInRange(float range) const;
     bool CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const;
+    bool GroupInCombat() const;
     bool DrinkAndEat();
     bool ShouldAutoRevive() const;
     bool GroupHasResurrection() const;
@@ -93,6 +94,7 @@ public:
     void UpdateOutOfCombatAI_Hunter() final;
     void UpdateInCombatAI_Mage() final;
     void UpdateOutOfCombatAI_Mage() final;
+    bool EnsureMageIceBarrier();
     void UpdateInCombatAI_Priest() final;
     void UpdateOutOfCombatAI_Priest() final;
     void UpdateInCombatAI_Warlock() final;

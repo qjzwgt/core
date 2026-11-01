@@ -222,12 +222,42 @@ bool PartyBotAI::RunAwayFromTarget(Unit* pEnemy)
     return me->GetMotionMaster()->MoveDistance(pEnemy, PB_RUN_AWAY_DISTANCE);
 }
 
+bool PartyBotAI::GroupInCombat() const
+{
+    if (Player* pLeader = GetPartyLeader())
+    {
+        if (pLeader->IsInCombat())
+            return true;
+    }
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return false;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (pMember && pMember != me && pMember->IsInCombat())
+            return true;
+    }
+
+    return false;
+}
+
 bool PartyBotAI::DrinkAndEat()
 {
     if (m_isBuffing)
         return false;
 
     if (me->GetVictim())
+        return false;
+
+    // A group that has entered combat calls only a bot that is still critically low back to eating or drinking. Once
+    // both of its pools are above thirty per cent it stands up and joins the fight.
+    bool const criticalRecovery =
+        me->GetHealthPercent() <= 30.0f ||
+        (me->GetPowerType() == POWER_MANA && me->GetPowerPercent(POWER_MANA) <= 30.0f);
+    if (!criticalRecovery && GroupInCombat())
         return false;
 
     // A player that is nearly whole does not sit down: the food and the water are for the health and the mana that
@@ -1229,6 +1259,9 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     if (me->IsNonMeleeSpellCasted(false, false, true))
         return;
 
+    if (EnsureMageIceBarrier())
+        return;
+
     if (me->GetTargetGuid() == me->GetObjectGuid())
         me->ClearTarget();
 
@@ -1267,7 +1300,7 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     if (me->GetSheath() == SHEATH_STATE_UNARMED && !me->IsMounted())
         me->SetSheath(SHEATH_STATE_MELEE);
 
-    if (!me->IsInCombat() && !me->IsMounted())
+    if (!me->IsInCombat() && !me->IsMounted() && !GroupInCombat())
     {
         UpdateOutOfCombatAI();
 
@@ -2206,17 +2239,6 @@ void PartyBotAI::UpdateOutOfCombatAI_Mage()
         }
     }
 
-    if (m_spells.mage.pIceBarrier &&
-        CanTryToCastSpell(me, m_spells.mage.pIceBarrier))
-    {
-        if (DoCastSpell(me, m_spells.mage.pIceBarrier) == SPELL_CAST_OK)
-        {
-            m_isBuffing = true;
-            me->ClearTarget();
-            return;
-        }
-    }
-
     if (m_isBuffing &&
        (!m_spells.mage.pArcaneIntellect ||
         !me->HasGCD(m_spells.mage.pArcaneIntellect)))
@@ -2226,6 +2248,21 @@ void PartyBotAI::UpdateOutOfCombatAI_Mage()
 
     if (me->GetVictim())
         UpdateInCombatAI_Mage();
+}
+
+bool PartyBotAI::EnsureMageIceBarrier()
+{
+    if (me->GetClass() != CLASS_MAGE || me->IsMounted() || !m_spells.mage.pIceBarrier)
+        return false;
+
+    if (me->HasAura(m_spells.mage.pIceBarrier->Id) ||
+        !CanTryToCastSpell(me, m_spells.mage.pIceBarrier))
+        return false;
+
+    if (me->GetStandState() != UNIT_STAND_STATE_STAND)
+        me->SetStandState(UNIT_STAND_STATE_STAND);
+
+    return DoCastSpell(me, m_spells.mage.pIceBarrier) == SPELL_CAST_OK;
 }
 
 void PartyBotAI::UpdateInCombatAI_Mage()
