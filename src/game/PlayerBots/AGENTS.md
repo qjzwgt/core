@@ -187,14 +187,16 @@ document and the code in step - it is what the maintainer reads to tune the valu
    that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
    cent health. `AttackStart()` keeps a mage out of the melee attacking state, so it never swings at an enemy that
    closes while it is between spells. On entering its class combat routine, a mage interrupts the current cast of its
-   target with Counterspell, casts Fire Blast whenever it is ready, and otherwise uses Frostbolt; without Frostbolt
-   it falls back to Fireball, as it also does when the target is immune to Frostbolt. At less than twenty per cent
-   mana it casts Evocation whenever no attacker can reach it with a melee attack. Cone of Cold is used under the same
-   multi-target condition as Arcane Explosion. The movement slow that Frostbolt leaves on the target does not hold
-   the next Frostbolt back: a bot skips a spell for its existing aura only when that aura is not the by-product of a
-   direct damage spell, or when the aura itself is periodic. A party mage never Blinks or uses Ice Block to leave a
-   control effect; Ice Block stays for the below-ten-per-cent health branch. Scorch is never cast. The generic
-   crowd-control, dispel, movement and marked-target work that runs before the class routine still comes first.
+   target with Counterspell and casts Fire Blast whenever it is ready in combat, but never against a frozen target.
+   It otherwise uses Frostbolt; without Frostbolt it falls back to Fireball, as it also does when the target is
+   immune to Frostbolt. A non-elite target below two per cent health is finished with the wand when Fire Blast is not
+   available. At less than twenty per cent mana the mage casts Evocation whenever no attacker can reach it with a
+   melee attack. Cone of Cold is used under the same multi-target condition as Arcane Explosion. The movement slow
+   that Frostbolt leaves on the target does not hold the next Frostbolt back: a bot skips a spell for its existing
+   aura only when that aura is not the by-product of a direct damage spell, or when the aura itself is periodic. A
+   party mage never Blinks or uses Ice Block to leave a control effect; Ice Block stays for the below-ten-per-cent
+   health branch. Scorch is never cast. The generic crowd-control, dispel, movement and marked-target work that runs
+   before the class routine still comes first.
 13. A party rogue opens only with Cheap Shot, falling back to Garrote only when Cheap Shot is not learned. With
    neither opener it does not hold an automatic attack back for stealth. While a rogue with stealth and an opener is
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`

@@ -2240,15 +2240,34 @@ void PartyBotAI::UpdateInCombatAI_Mage()
                 return;
         }
 
-        // Fire Blast has priority whenever it is ready. Cone of Cold shares the multi-target condition of Arcane
-        // Explosion. Frostbolt is the single-target filler, with Fireball as its fallback.
-        if (m_spells.mage.pFireBlast &&
-            CanTryToCastSpell(pVictim, m_spells.mage.pFireBlast))
+        // Fire Blast is used only inside combat and never against a frozen target, whose root is meant to hold.
+        bool canUseFireBlast =
+            me->IsInCombat() &&
+            !pVictim->IsFrozen() &&
+            m_spells.mage.pFireBlast &&
+            CanTryToCastSpell(pVictim, m_spells.mage.pFireBlast);
+        if (canUseFireBlast)
         {
             if (DoCastSpell(pVictim, m_spells.mage.pFireBlast) == SPELL_CAST_OK)
                 return;
+
+            canUseFireBlast = false;
         }
 
+        // Finish a trivial target with the wand when Fire Blast cannot do it.
+        if (!canUseFireBlast &&
+           (pVictim->GetHealthPercent() < 2.0f) &&
+           (!pVictim->IsCreature() || !static_cast<Creature*>(pVictim)->IsElite()) &&
+            me->HasSpell(PB_SPELL_SHOOT_WAND) &&
+            !me->IsMoving() &&
+            !me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+        {
+            if (me->CastSpell(pVictim, PB_SPELL_SHOOT_WAND, false) == SPELL_CAST_OK)
+                return;
+        }
+
+        // Cone of Cold shares the multi-target condition of Arcane Explosion. Frostbolt is the single-target filler,
+        // with Fireball as its fallback.
         if (m_spells.mage.pConeofCold &&
             (me->GetEnemyCountInRadiusAround(me, 10.0f) > 1) &&
             m_spells.mage.pConeofCold->IsTargetInRange(me, pVictim) &&
