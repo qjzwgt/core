@@ -178,7 +178,9 @@ bool BattleBotAI::AttackStart(Unit* pVictim)
     if (me->IsMounted())
         me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
-    if (me->Attack(pVictim, true))
+    // A mage fights by casting and must not swing a melee weapon between spells when an enemy closes.
+    bool const useMeleeAttack = me->GetClass() != CLASS_MAGE;
+    if (me->Attack(pVictim, useMeleeAttack))
     {
         ClearPath();
         BeginChasing(pVictim);

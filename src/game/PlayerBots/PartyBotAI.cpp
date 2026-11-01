@@ -667,7 +667,11 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
     }
 
     m_rogueStealthTargetGuid.Clear();
-    if (me->Attack(pVictim, true))
+    // A mage fights by casting. Unit::Attack(..., true) puts it in the melee attacking state, and the core then swings
+    // at anything that closes while no spell is being prepared. Keep the mage's victim and combat relationship
+    // without enabling melee attacks.
+    bool const useMeleeAttack = me->GetClass() != CLASS_MAGE;
+    if (me->Attack(pVictim, useMeleeAttack))
     {
         BeginChasing(pVictim);
         return true;
@@ -1236,10 +1240,13 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         }
     }
 
-    if (me->GetClass() == CLASS_ROGUE &&
-        me->HasAuraType(SPELL_AURA_MOD_STEALTH) &&
-        !m_rogueStealthTargetGuid.IsEmpty())
+    if (me->GetClass() == CLASS_ROGUE && !m_rogueStealthTargetGuid.IsEmpty())
+    {
+        // A party member may put the rogue into combat before the stealth approach reaches its target. The rogue
+        // routine must still run, or the pending opener can wait forever outside the generic target handling.
+        UpdateInCombatAI_Rogue();
         return;
+    }
 
     Unit* pVictim = me->GetVictim();
 
@@ -3184,8 +3191,7 @@ void PartyBotAI::UpdateOutOfCombatAI_Rogue()
     if (EnterStealthIfNeeded(m_spells.rogue.pStealth))
         return;
 
-    if (me->GetVictim() ||
-        (me->HasAuraType(SPELL_AURA_MOD_STEALTH) && !m_rogueStealthTargetGuid.IsEmpty()))
+    if (me->GetVictim())
         UpdateInCombatAI_Rogue();
 }
 
