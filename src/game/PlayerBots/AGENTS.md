@@ -187,8 +187,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    closes while it is between spells. On entering its class combat routine, a mage casts Fire Blast only when the
    target is below five per cent health, then Frostbolt; without Frostbolt it falls back to Fireball, as it also does
    when the target is immune to Frostbolt. Cone of Cold is used under the same multi-target condition as Arcane
-   Explosion. Scorch is never cast. The generic crowd-control, dispel, movement and marked-target work that runs
-   before the class routine still comes first.
+   Explosion. The movement slow that Frostbolt leaves on the target does not hold the next Frostbolt back: a bot
+   skips a spell for its existing aura only when that aura is not the by-product of a direct damage spell, or when
+   the aura itself is periodic. Scorch is never cast. The generic crowd-control, dispel, movement and marked-target
+   work that runs before the class routine still comes first.
 13. A party rogue opens only with Cheap Shot, falling back to Garrote only when Cheap Shot is not learned. With
    neither opener it does not hold an automatic attack back for stealth. While a rogue with stealth and an opener is
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`

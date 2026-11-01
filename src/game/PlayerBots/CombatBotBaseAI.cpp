@@ -3195,6 +3195,39 @@ void CombatBotBaseAI::AutoEquipGear(uint32 option)
     UpdateVisualHonorRankBasedOnItems();
 }
 
+namespace
+{
+    // An aura spell, or the damage over time of a direct spell, is worth keeping instead of casting the same spell
+    // again. A direct spell can carry another aura, such as the slow of Frostbolt, without that aura replacing the
+    // damage that the next cast does.
+    bool HasRecastBlockingAura(Unit const* pTarget, SpellEntry const* pSpellEntry)
+    {
+        if (!pSpellEntry->IsSpellAppliesAura())
+            return false;
+
+        auto const bounds = pTarget->GetSpellAuraHolderBounds(pSpellEntry->Id);
+        if (bounds.first == bounds.second)
+            return false;
+
+        if (!pSpellEntry->IsDirectDamageSpell())
+            return true;
+
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+            {
+                if (Aura* pAura = itr->second->GetAuraByEffectIndex(SpellEffectIndex(i)))
+                {
+                    if (pAura->IsPeriodic())
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+}
+
 bool CombatBotBaseAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const
 {
     if (m_preventCasting)
@@ -3233,7 +3266,7 @@ bool CombatBotBaseAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* p
     if (pSpellEntry->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK)
         return false;
 
-    if (pSpellEntry->IsSpellAppliesAura() && pTarget->HasAura(pSpellEntry->Id))
+    if (HasRecastBlockingAura(pTarget, pSpellEntry))
         return false;
 
     SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(pSpellEntry->rangeIndex);
