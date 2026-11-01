@@ -2239,8 +2239,11 @@ void PartyBotAI::UpdateInCombatAI_Mage()
                 return;
         }
 
-        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE
-            && me->GetDistance(pVictim) > 30.0f)
+        SpellEntry const* pRangeSpell = m_spells.mage.pFrostbolt ?
+            m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE &&
+            pRangeSpell &&
+            !IsTargetInSpellRange(pVictim, pRangeSpell))
         {
             BeginChasing(pVictim);
         }
@@ -2273,6 +2276,7 @@ void PartyBotAI::UpdateInCombatAI_Mage()
                 if (!me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE))
                 {
                     if (m_spells.mage.pFrostNova &&
+                       (me->GetCombatDistance(pVictim) < PB_RUN_AWAY_DISTANCE) &&
                        !pVictim->HasUnitState(UNIT_STATE_ROOT) &&
                        !pVictim->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL) &&
                         CanTryToCastSpell(me, m_spells.mage.pFrostNova))
@@ -2282,7 +2286,8 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 
                     if (CanRunAwayFrom(pVictim) && RunAwayFromTarget(pVictim))
                     {
-                        me->SetCasterChaseDistance(GetChaseDistance());
+                        me->SetCasterChaseDistance(pRangeSpell ?
+                            GetSpellMaxRangeForBot(pRangeSpell) : GetChaseDistance());
                         return;
                     }
                 }

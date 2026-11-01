@@ -43,6 +43,7 @@ enum BattleBotSpells
 };
 
 #define BB_UPDATE_INTERVAL 1000
+#define BB_FROST_NOVA_DISTANCE 8.0f
 
 #define GO_WSG_DROPPED_SILVERWING_FLAG 179785
 #define GO_WSG_DROPPED_WARSONG_FLAG 179786
@@ -1067,7 +1068,7 @@ void BattleBotAI::UpdateFlagCarrierAI()
             {
                 if (m_spells.mage.pFrostNova &&
                     CanTryToCastSpell(me, m_spells.mage.pFrostNova) &&
-                    m_spells.mage.pFrostNova->IsTargetInRange(me, pAttacker))
+                    (me->GetCombatDistance(pAttacker) < BB_FROST_NOVA_DISTANCE))
                 {
                     me->CastSpell(me, m_spells.mage.pFrostNova, false);
                     return;
@@ -1792,8 +1793,11 @@ void BattleBotAI::UpdateInCombatAI_Mage()
                 return;
         }
 
-        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE
-            && me->GetDistance(pVictim) > 30.0f)
+        SpellEntry const* pRangeSpell = m_spells.mage.pFrostbolt ?
+            m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE &&
+            pRangeSpell &&
+            !IsTargetInSpellRange(pVictim, pRangeSpell))
         {
             BeginChasing(pVictim);
         }
@@ -1816,6 +1820,7 @@ void BattleBotAI::UpdateInCombatAI_Mage()
             if (!me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE))
             {
                 if (m_spells.mage.pFrostNova &&
+                    (me->GetCombatDistance(pVictim) < BB_FROST_NOVA_DISTANCE) &&
                     !pVictim->HasUnitState(UNIT_STATE_ROOT) &&
                     !pVictim->HasUnitState(UNIT_STATE_CAN_NOT_REACT_OR_LOST_CONTROL) &&
                     CanTryToCastSpell(me, m_spells.mage.pFrostNova))

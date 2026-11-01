@@ -3239,15 +3239,54 @@ bool CombatBotBaseAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* p
     SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(pSpellEntry->rangeIndex);
     if (me != pTarget && pSpellEntry->EffectImplicitTargetA[0] != TARGET_UNIT_CASTER)
     {
-        float const dist = me->GetCombatDistance(pTarget);
+        float maxRange = srange->maxRange;
+        if (Player* pModOwner = me->GetSpellModOwner())
+            pModOwner->ApplySpellMod(pSpellEntry->Id, SPELLMOD_RANGE, maxRange, nullptr, false);
 
-        if (dist > srange->maxRange)
+        float const dist = me->GetCombatDistance(pTarget);
+        if (dist > maxRange)
             return false;
         if (srange->minRange && dist < srange->minRange)
             return false;
     }
 
     return true;
+}
+
+// The range that the next real cast will use. A player spell can have its range raised by a talent, which the client
+// and Spell::CheckRange apply through SPELLMOD_RANGE; the bot has to ask for the same value before it moves or casts.
+float CombatBotBaseAI::GetSpellMaxRangeForBot(SpellEntry const* pSpellEntry) const
+{
+    if (!pSpellEntry)
+        return 0.0f;
+
+    float maxRange = Spells::GetSpellMaxRange(sSpellRangeStore.LookupEntry(pSpellEntry->rangeIndex));
+    if (Player* pModOwner = me->GetSpellModOwner())
+        pModOwner->ApplySpellMod(pSpellEntry->Id, SPELLMOD_RANGE, maxRange, nullptr, false);
+
+    return maxRange;
+}
+
+bool CombatBotBaseAI::IsTargetInSpellRange(Unit const* pTarget, SpellEntry const* pSpellEntry) const
+{
+    if (!pTarget || !pSpellEntry)
+        return false;
+
+    switch (pSpellEntry->rangeIndex)
+    {
+        case SPELL_RANGE_IDX_SELF_ONLY:
+        case SPELL_RANGE_IDX_ANYWHERE:
+        case SPELL_RANGE_IDX_COMBAT:
+            return pSpellEntry->IsTargetInRange(me, pTarget);
+    }
+
+    SpellRangeEntry const* pRange = sSpellRangeStore.LookupEntry(pSpellEntry->rangeIndex);
+    if (!pRange)
+        return false;
+
+    float const distance = me->GetCombatDistance(pTarget);
+    float const minRange = Spells::GetSpellMinRange(pRange);
+    return distance <= GetSpellMaxRangeForBot(pSpellEntry) && (!minRange || distance >= minRange);
 }
 
 // A frost mage falls back from Frostbolt to Fireball only when it has not learned Frostbolt or when the target is
@@ -3420,8 +3459,9 @@ void CombatBotBaseAI::UpdateVisualHonorRankBasedOnItems()
 }
 
 // The ordinary distance of a battle bot, which is on the same ground in every battleground. BeginChasing() raises a
-// ranged damage bot to the 30 yards of its common attack spells. A party bot answers by the ground that it stands
-// on, since a party plays in dungeons, in the open world, and in a battleground.
+// ranged damage bot to the 30 yards of its common attack spells, and a mage to the modified range of Frostbolt. A
+// party bot answers by the ground that it stands on, since a party plays in dungeons, in the open world, and in a
+// battleground.
 float CombatBotBaseAI::GetChaseDistance() const
 {
     return 25.0f;
@@ -3430,13 +3470,22 @@ float CombatBotBaseAI::GetChaseDistance() const
 void CombatBotBaseAI::BeginChasing(Unit* pVictim) const
 {
     float chaseDistance = GetChaseDistance();
-    if (m_role == ROLE_RANGE_DPS && chaseDistance < 30.0f)
+    SpellEntry const* pMageRangeSpell = nullptr;
+    if (me->GetClass() == CLASS_MAGE)
+        pMageRangeSpell = m_spells.mage.pFrostbolt ? m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
+
+    if (pMageRangeSpell)
+        chaseDistance = GetSpellMaxRangeForBot(pMageRangeSpell);
+    else if (m_role == ROLE_RANGE_DPS && chaseDistance < 30.0f)
         chaseDistance = 30.0f;
 
-    if ((m_role == ROLE_RANGE_DPS || m_role == ROLE_HEALER) &&
-        IsRangedDamageClass(me->GetClass()) &&
-       !IsAttackSpeedOverridenForm(me->GetShapeshiftForm()) &&
-       (me->GetPowerPercent(POWER_MANA) > 10.0f || me->GetWeaponForAttack(RANGED_ATTACK, true, true)))
+    bool const useCasterMovement =
+        pMageRangeSpell ||
+        ((m_role == ROLE_RANGE_DPS || m_role == ROLE_HEALER) &&
+          IsRangedDamageClass(me->GetClass()) &&
+          !IsAttackSpeedOverridenForm(me->GetShapeshiftForm()) &&
+          (me->GetPowerPercent(POWER_MANA) > 10.0f || me->GetWeaponForAttack(RANGED_ATTACK, true, true)));
+    if (useCasterMovement)
         me->SetCasterChaseDistance(chaseDistance);
     else if (me->HasDistanceCasterMovement())
         me->SetCasterChaseDistance(0.0f);

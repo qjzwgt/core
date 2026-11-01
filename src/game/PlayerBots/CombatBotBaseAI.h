@@ -148,6 +148,8 @@ public:
 
     SpellCastResult DoCastSpell(Unit* pTarget, SpellEntry const* pSpellEntry);
     virtual bool CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const;
+    float GetSpellMaxRangeForBot(SpellEntry const* pSpellEntry) const;
+    bool IsTargetInSpellRange(Unit const* pTarget, SpellEntry const* pSpellEntry) const;
     bool ShouldUseFireballInsteadOfFrostbolt(Unit const* pTarget) const;
     bool IsWearingShield(Player* pPlayer) const;
     bool IsInDuel() const;

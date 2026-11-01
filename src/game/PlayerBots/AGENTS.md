@@ -162,19 +162,22 @@ document and the code in step - it is what the maintainer reads to tune the valu
    enemy next to the bot is not held; that is what keeps a priest healing and a warlock casting instead of walking
    backwards, and those two have no running of their own to change.
    The distance of that kiting is `PB_RUN_AWAY_DISTANCE`, eight yards on every kind of ground. It is what
-   `RunAwayFromTarget()` steps back by. After that step the chase generator returns to the ordinary chasing distance,
-   so a distant target does not pull the bot back towards eight yards. A bot that already has those eight yards does
-   not run again, so a mage whose Frost Nova holds the enemy casts from that distance instead of starting another
-   distance movement. A bot in combat follows neither the party leader nor a tank: every run away from the enemy is
-   a step directly away from that enemy. Once the mage reaches eight yards from a held target, it stops and clears
-   the distance or chase generator before beginning the Frostbolt cast. Finishing a distance move calls the player
-   AI immediately, so the mage does not wait for the next one-second party-bot update.
+   `RunAwayFromTarget()` steps back by. After that step the mage's chase generator returns to the casting range of
+   Frostbolt, or of Fireball when Frostbolt is not learned, so a distant target does not pull the mage back towards
+   eight yards. A bot that already has those eight yards does not run again, so a mage whose Frost Nova holds the
+   enemy casts from that distance instead of starting another distance movement. The mage casts Frost Nova only when
+   the target is closer than eight yards. A bot in combat follows neither the party leader nor a tank: every run away
+   from the enemy is a step directly away from that enemy. Once the mage reaches eight yards from a held target, it
+   stops and clears the distance or chase generator before beginning the Frostbolt cast. Finishing a distance move
+   calls the player AI immediately, so the mage does not wait for the next one-second party-bot update.
    `PartyBotAI::GetChaseDistance()` remains the ordinary distance for chasing and casting: ten yards in a dungeon
    or raid, twenty in the open world and thirty in a battleground, the battleground asked for first because it is
-   an instance too. A ranged damage bot uses thirty yards on every kind of ground instead, so it approaches only
-   when the target is outside the range of its longest common attack spell and never walks closer for a
-   short-range spell such as Fire Blast. `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle
-   bot, which fights on the same ground in every battleground. A hunter swings the melee weapon that it wears
+   an instance too. A mage uses the maximum range of its learned Frostbolt, or Fireball when Frostbolt is absent,
+   including `SPELLMOD_RANGE` from talents; it does not chase while the target is inside that range. Other ranged
+   damage bots use thirty yards on every kind of ground instead, so they approach only when the target is outside the
+   range of their longest common attack spell and never walk closer for a short-range spell such as Fire Blast.
+   `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle bot, which fights on the same ground in
+   every battleground. A hunter swings the melee weapon that it wears
    instead of running - the auto attack of the core does the swinging, `UpdateAI` has taken the auto shot away from
    it below 8 yards, and its raptor strike and mongoose bite are in the `CanReachWithMeleeAutoAttack()` branch. The
    three places that ask are the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid
