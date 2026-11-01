@@ -834,7 +834,7 @@ Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
 
     if (!IsInDuel())
     {
-        // Check if other group members are under attack.
+        // Assist the target of another fighting group member.
         if (Unit* pPartyAttacker = SelectPartyAttackTarget())
             return pPartyAttacker;
     }
@@ -863,6 +863,16 @@ Unit* PartyBotAI::SelectPartyAttackTarget() const
             // We already checked self.
             if (pMember == me)
                 continue;
+
+            if (pMember->IsInCombat())
+            {
+                if (Unit* pVictim = pMember->GetVictim())
+                {
+                    if (IsValidHostileTarget(pVictim) &&
+                        me->IsWithinDist(pVictim, 50.0f))
+                        return pVictim;
+                }
+            }
 
             for (const auto pAttacker : pMember->GetAttackers())
             {

@@ -220,10 +220,12 @@ document and the code in step - it is what the maintainer reads to tune the valu
    trainer spells of their current level. The trainer sync runs again only when the level changes. Quest-only class
    abilities are not trainer spells and are not covered by it.
 
-14. A breakable-by-damage control effect normally keeps a party bot from selecting that unit as its attack target.
-    When the only attackable hostile unit within fifty yards is in combat and held by such an effect, the bot instead
-    selects that unit and attacks it, which may break the control. A second hostile unit in range returns target
-    selection to the ordinary rule, so a bot does not break a sheep or a blind while there is another target to use.
+14. A party bot that has no target of its own first assists the current target of another group member that is in
+    combat, within fifty yards, before it considers the units that are only attacking that member. A breakable-by-
+    damage control effect normally keeps a party bot from selecting that unit as its attack target. When the only
+    attackable hostile unit within fifty yards is in combat and held by such an effect, the bot instead selects that
+    unit and attacks it, which may break the control. A second hostile unit in range returns target selection to the
+    ordinary rule, so a bot does not break a sheep or a blind while there is another target to use.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
