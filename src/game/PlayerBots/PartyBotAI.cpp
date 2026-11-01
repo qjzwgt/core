@@ -1047,6 +1047,7 @@ void PartyBotAI::UpdateAI(uint32 const diff)
 
         // The riding skill and the mount of the bot's own race or class, for a bot created at the level that asks
         // for them and for a bot that was saved as a rider already: what the bot knows is left as it is.
+        LearnTrainerSpellsForLevel();
         LearnRidingAndMounts();
 
         ResetSpellData();
@@ -1271,6 +1272,12 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         // takes the riding and the summon of that rank here, out of the way of a fight and on the walk. Nothing is
         // asked of the bot whose level has not moved, and a bot that is called into the fight before it has its
         // mount gets it on the next step that it takes on foot.
+        if (LearnTrainerSpellsForLevel())
+        {
+            ResetSpellData();
+            PopulateSpellData();
+        }
+
         LearnRidingAndMounts();
 
         // A party that rides is a party that is travelling, so the bot gets on a mount when the leader does and gets
@@ -3146,7 +3153,9 @@ bool PartyBotAI::ShouldEnterStealth() const
             return true;
     }
 
-    return false;
+    // Keep a stealth that has already begun until combat or another game rule ends it. In particular, a rogue that
+    // is following its leader does not cancel stealth merely because no hostile target has been selected yet.
+    return me->HasAuraType(SPELL_AURA_MOD_STEALTH);
 }
 
 bool PartyBotAI::EnterStealthIfNeeded(SpellEntry const* pStealthSpell)

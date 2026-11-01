@@ -2406,6 +2406,20 @@ void CombatBotBaseAI::LearnArmorProficiencies()
     }
 }
 
+// A player visits a class trainer after a level brings new spells. A bot does the same once for each level it reaches:
+// the trainer command walks the ranked spells until no further rank can be learned, and an already learned spell is
+// left alone. Quest-only abilities are not trainer spells and are outside this sync.
+bool CombatBotBaseAI::LearnTrainerSpellsForLevel()
+{
+    if (me->GetLevel() == m_trainerTaughtLevel)
+        return false;
+
+    m_trainerTaughtLevel = me->GetLevel();
+    char trainerArgs[] = "";
+    ChatHandler(me).HandleLearnAllTrainerCommand(trainerArgs);
+    return true;
+}
+
 void CombatBotBaseAI::LearnPremadeSpecForClass()
 {
     // The talent of the bot: the one that `.partybot add <abbreviation>` asked for, or the one that the role of
@@ -2454,9 +2468,8 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
             }
 
             // The spells of the trainers and of the items come after the talents, as in the fallback below.
-            char trainerArgs[] = "";
             char itemArgs[] = "";
-            ChatHandler(me).HandleLearnAllTrainerCommand(trainerArgs);
+            LearnTrainerSpellsForLevel();
             ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
             return;
         }
@@ -2505,9 +2518,8 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
     {
         // Use gm command to learn spells on trainers and items.
         LearnRandomTalents();
-        char trainerArgs[] = "";
+        LearnTrainerSpellsForLevel();
         char itemArgs[] = "";
-        ChatHandler(me).HandleLearnAllTrainerCommand(trainerArgs);
         ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
     }
 }

@@ -98,6 +98,8 @@ public:
     void LearnArmorProficiencies();
     // The dual wield that the trainers teach, needed to know which weapons a bot can wear before dressing it
     bool PrepareDualWield();
+    // The ordinary trainer spells that a character of the current level has been taught, learned once per level
+    bool LearnTrainerSpellsForLevel();
     // The attributes and the score that one item would give to this bot, to rate the values of the weights
     void PrintGearItemScore(ChatHandler& handler, uint32 itemEntry);
     void LearnPremadeSpecForClass();
@@ -594,6 +596,7 @@ public:
     bool m_preventCasting = false;
     bool m_receivedBgInvite = false;
     uint8 m_visualHonorRank = 0;
+    uint8 m_trainerTaughtLevel = 0;
     uint8 m_ridingTaughtLevel = 0;
     CombatBotRoles m_role = ROLE_INVALID;
     uint8 m_requestedTalentPage = MAX_GEAR_SPEC_TABS;

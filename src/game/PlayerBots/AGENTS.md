@@ -188,14 +188,20 @@ document and the code in step - it is what the maintainer reads to tune the valu
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`
    nor `ChaseMovementGenerator` may start auto attacks before the opener has been cast. A party member that starts
    combat first does not stop that approach: the pending target stays with the rogue routine until the opener or a
-   normal attack replaces it. At two combo points it keeps Slice and Dice on a target above ten per cent health;
-   below ten per cent it Eviscerates from three points; at five points it refreshes Slice and Dice below ten seconds
-   and otherwise Eviscerates. Riposte precedes Sinister Strike, Kick is the only interrupt, Blade Flurry needs two
-   nearby enemies that are not control-marked, and Adrenaline Rush is for an elite at least two levels above the
-   rogue with less than twenty energy. Evasion needs health below eighty per cent and two non-ranged attackers within
-   five yards. Vanish at less than fifteen per cent health keeps the rogue in stealth away from the fight until health
-   reaches forty per cent. Sprint is used only in combat with the target over twenty yards away. Blind remains the
-   control-marked spell and the reaction to another attacker on the party.
+   normal attack replaces it. A rogue that already has stealth does not cancel it merely because no target has been
+   selected yet or because the leader leaves stealth; combat and the rules of the spell still break it normally. At
+   two combo points it keeps Slice and Dice on a target above ten per cent health; below ten per cent it Eviscerates
+   from three points; at five points it refreshes Slice and Dice below ten seconds and otherwise Eviscerates. Riposte
+   precedes Sinister Strike, Kick is the only interrupt, Blade Flurry needs two nearby enemies that are not
+   control-marked, and Adrenaline Rush is for an elite at least two levels above the rogue with less than twenty
+   energy. Evasion needs health below eighty per cent and two non-ranged attackers within five yards. Vanish at less
+   than fifteen per cent health keeps the rogue in stealth away from the fight until health reaches forty per cent.
+   Sprint is used only in combat with the target over twenty yards away. Blind remains the control-marked spell and
+   the reaction to another attacker on the party.
+
+   New party and battle bots, party bots loaded from the database, and party bots that level up learn the ordinary
+   trainer spells of their current level. The trainer sync runs again only when the level changes. Quest-only class
+   abilities are not trainer spells and are not covered by it.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
