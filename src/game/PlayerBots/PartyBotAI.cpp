@@ -698,11 +698,15 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
 
     m_rogueStealthTargetGuid.Clear();
     // A mage fights by casting. Unit::Attack(..., true) puts it in the melee attacking state, and the core then swings
-    // at anything that closes while no spell is being prepared. Keep the mage's victim and combat relationship
-    // without enabling melee attacks.
+    // at anything that closes while no spell is being prepared. Keep the mage's victim without enabling melee attacks,
+    // but put it in combat explicitly: nothing else in a spell-only attack enters combat for it.
     bool const useMeleeAttack = me->GetClass() != CLASS_MAGE;
-    if (me->Attack(pVictim, useMeleeAttack))
+    bool const attackStarted = me->Attack(pVictim, useMeleeAttack);
+    if (attackStarted || me->GetVictim() == pVictim)
     {
+        if (!useMeleeAttack)
+            me->SetInCombatWithVictim(pVictim);
+
         BeginChasing(pVictim);
         return true;
     }

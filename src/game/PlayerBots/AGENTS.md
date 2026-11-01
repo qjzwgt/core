@@ -189,9 +189,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
    cent health. On every update, in combat and out of it, a mage that is not mounted checks for Ice Barrier and casts
    it when the buff is absent and the spell is usable. `AttackStart()` keeps a mage out of the melee attacking state,
-   so it never swings at an enemy that closes while it is between spells. On entering its class combat routine, a
-   mage interrupts the current cast of its target with Counterspell and casts Fire Blast whenever it is ready in
-   combat, but never against a frozen target. It otherwise uses Frostbolt; without Frostbolt it falls back to
+   so it never swings at an enemy that closes while it is between spells, but it enters combat explicitly when it
+   starts attacking, since a spell-only attack has no melee swing to do that later. On entering its class combat
+   routine, a mage interrupts the current cast of its target with Counterspell and casts Fire Blast whenever it is
+   ready in combat, but never against a frozen target. It otherwise uses Frostbolt; without Frostbolt it falls back to
    Fireball, as it also does when the target is immune to Frostbolt. A non-elite target below two per cent health is
    finished with the wand when Fire Blast is not available. At less than twenty per cent mana the mage casts
    Evocation whenever no attacker can reach it with a melee attack. Cone of Cold is used under the same multi-target
