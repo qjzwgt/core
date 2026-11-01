@@ -226,7 +226,9 @@ bool PartyBotAI::GroupInCombat() const
 {
     if (Player* pLeader = GetPartyLeader())
     {
-        if (pLeader->IsInCombat())
+        // A player that is only being attacked has no victim of their own, and the combat flag can arrive after the
+        // attack relationship exists. Either relation means that the party is already fighting.
+        if (pLeader->IsInCombat() || pLeader->GetAttackerForHelper())
             return true;
     }
 
@@ -237,7 +239,7 @@ bool PartyBotAI::GroupInCombat() const
     for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
     {
         Player* pMember = itr->getSource();
-        if (pMember && pMember != me && pMember->IsInCombat())
+        if (pMember && pMember != me && (pMember->IsInCombat() || pMember->GetAttackerForHelper()))
             return true;
     }
 
@@ -868,14 +870,12 @@ Unit* PartyBotAI::SelectPartyAttackTarget() const
             if (pMember == me)
                 continue;
 
-            if (pMember->IsInCombat())
+            // A member can have a target before its first swing has set the in-combat flag.
+            if (Unit* pVictim = pMember->GetVictim())
             {
-                if (Unit* pVictim = pMember->GetVictim())
-                {
-                    if (IsValidHostileTarget(pVictim) &&
-                        me->IsWithinDist(pVictim, 50.0f))
-                        return pVictim;
-                }
+                if (IsValidHostileTarget(pVictim) &&
+                    me->IsWithinDist(pVictim, 50.0f))
+                    return pVictim;
             }
 
             for (const auto pAttacker : pMember->GetAttackers())
@@ -1431,7 +1431,7 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         }
     }
 
-    if (me->IsInCombat())
+    if (me->IsInCombat() || me->GetVictim())
         UpdateInCombatAI();
 }
 

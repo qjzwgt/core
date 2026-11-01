@@ -102,15 +102,15 @@ document and the code in step - it is what the maintainer reads to tune the valu
    A rank whose spell the Spell.dbc of the running patch does not have is passed over, so a patch of a low maximum
    level keeps the ranks that it has. The core sits down the one that eats and takes the buff away from a character
    that stands up again (`AURA_INTERRUPT_STANDING_CANCELS`), so the update does not stand a bot up while it still
-   needs its meal, and a bot called into combat stops eating. When another member of the group enters combat, an
-   out-of-combat bot keeps recovering only while its health or mana is at or below thirty per cent. Once both are
-   above thirty per cent it stands up and joins the fight. The bandage is a real item, and its stack is put in the
-   bags of the bot when the bags have none, as the ammo of a hunter is put in the quiver. The bandage of a bot is the
-   tier whose first aid rank (`required_skill_rank` of the item) the first aid of a player of that level has reached;
-   those levels are the table `bandageTiers` of `CombatBotBaseAI.cpp`. The three tables are some of the few places of
-   this subsystem where item and spell ids are written in C++ - to tune the tiers means moving them into
-   `sql/custom/repack/`, not keeping a second list. A bot does not learn the first aid skill: the core checks the
-   `RequiredSkill` of an item when it loads the prototypes and never when the item is used.
+   needs its meal, and a bot called into combat stops eating. When another member of the group enters combat, has an
+   attack target, or is being attacked, an out-of-combat bot keeps recovering only while its health or mana is at or
+   below thirty per cent. Once both are above thirty per cent it stands up and joins the fight. The bandage is a real
+   item, and its stack is put in the bags of the bot when the bags have none, as the ammo of a hunter is put in the
+   quiver. The bandage of a bot is the tier whose first aid rank (`required_skill_rank` of the item) the first aid of
+   a player of that level has reached; those levels are the table `bandageTiers` of `CombatBotBaseAI.cpp`. The three
+   tables are some of the few places of this subsystem where item and spell ids are written in C++ - to tune the
+   tiers means moving them into `sql/custom/repack/`, not keeping a second list. A bot does not learn the first aid
+   skill: the core checks the `RequiredSkill` of an item when it loads the prototypes and never when the item is used.
 10. A bot rides the mount of its own race, or the mount of its class for a paladin and a warlock, and it calls the
    summon as a player calls it. The summons are the table `mountTiers` of `CombatBotBaseAI.cpp`: the ground mount of
    each race at the level its vendor teaches it, forty for the one of sixty per cent speed and sixty for the one of a
@@ -221,12 +221,13 @@ document and the code in step - it is what the maintainer reads to tune the valu
    trainer spells of their current level. The trainer sync runs again only when the level changes. Quest-only class
    abilities are not trainer spells and are not covered by it.
 
-14. A party bot that has no target of its own first assists the current target of another group member that is in
-    combat, within fifty yards, before it considers the units that are only attacking that member. A breakable-by-
-    damage control effect normally keeps a party bot from selecting that unit as its attack target. When the only
-    attackable hostile unit within fifty yards is in combat and held by such an effect, the bot instead selects that
-    unit and attacks it, which may break the control. A second hostile unit in range returns target selection to the
-    ordinary rule, so a bot does not break a sheep or a blind while there is another target to use.
+14. A party bot that has no target of its own first assists the current target of another group member within fifty
+    yards, before it considers the units that are only attacking that member. Having a target is enough here because
+    the first melee swing may not have set the member's in-combat flag yet. A breakable-by-damage control effect
+    normally keeps a party bot from selecting that unit as its attack target. When the only attackable hostile unit
+    within fifty yards is in combat and held by such an effect, the bot instead selects that unit and attacks it,
+    which may break the control. A second hostile unit in range returns target selection to the ordinary rule, so a
+    bot does not break a sheep or a blind while there is another target to use.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
