@@ -1719,9 +1719,10 @@ void BattleBotAI::UpdateInCombatAI_Mage()
 {
     if (Unit* pVictim = me->GetVictim())
     {
-        // Fire Blast leads the damage order. Cone of Cold follows for one target or many and may be cast while moving;
-        // Frostbolt is the filler, with Fireball as its fallback.
+        // Fire Blast is only a finisher. Cone of Cold shares the multi-target condition of Arcane Explosion.
+        // Frostbolt is the single-target filler, with Fireball as its fallback.
         if (m_spells.mage.pFireBlast &&
+            (pVictim->GetHealthPercent() < 5.0f) &&
             CanTryToCastSpell(pVictim, m_spells.mage.pFireBlast))
         {
             if (DoCastSpell(pVictim, m_spells.mage.pFireBlast) == SPELL_CAST_OK)
@@ -1729,6 +1730,7 @@ void BattleBotAI::UpdateInCombatAI_Mage()
         }
 
         if (m_spells.mage.pConeofCold &&
+            (GetAttackersInRangeCount(10.0f) > 1) &&
             m_spells.mage.pConeofCold->IsTargetInRange(me, pVictim) &&
             CanTryToCastSpell(pVictim, m_spells.mage.pConeofCold))
         {
