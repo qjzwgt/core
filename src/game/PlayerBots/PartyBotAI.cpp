@@ -4023,7 +4023,7 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
     }
 
     bool const needThunderClap =
-        GetEnemyCountInRadiusAround(pVictim, 10.0f) > 2 &&
+        me->GetEnemyCountInRadiusAround(pVictim, 10.0f) > 2 &&
         !HasThunderClapDebuff(pVictim) &&
         me->GetPower(POWER_RAGE) > 20 * PB_RAGE_PER_POINT &&
         m_spells.warrior.pThunderClap &&
