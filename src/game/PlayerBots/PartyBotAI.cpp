@@ -222,13 +222,66 @@ bool PartyBotAI::RunAwayFromTarget(Unit* pEnemy)
     return me->GetMotionMaster()->MoveDistance(pEnemy, PB_RUN_AWAY_DISTANCE);
 }
 
-bool PartyBotAI::GroupInCombat() const
+bool PartyBotAI::GroupAllMounted() const
 {
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return me->IsMounted();
+
+    if (Player* pLeader = GetPartyLeader())
+    {
+        if (!pLeader->IsMounted())
+            return false;
+    }
+
+    bool foundMember = false;
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember)
+            continue;
+
+        foundMember = true;
+        if (!pMember->IsMounted())
+            return false;
+    }
+
+    return foundMember;
+}
+
+bool PartyBotAI::GroupHasFightingMemberMounted() const
+{
+    if (me->IsMounted() &&
+        (me->IsInCombat() || me->GetVictim() || me->GetAttackerForHelper()))
+        return true;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return false;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (pMember && pMember != me && pMember->IsMounted() &&
+            (pMember->IsInCombat() || pMember->GetVictim() || pMember->GetAttackerForHelper()))
+            return true;
+    }
+
+    return false;
+}
+
+bool PartyBotAI::GroupHasFightingMemberOnFoot() const
+{
+    if (!me->IsMounted() &&
+        (me->IsInCombat() || me->GetVictim() || me->GetAttackerForHelper()))
+        return true;
+
     if (Player* pLeader = GetPartyLeader())
     {
         // A player that is only being attacked has no victim of their own, and the combat flag can arrive after the
         // attack relationship exists. Either relation means that the party is already fighting.
-        if (pLeader->IsInCombat() || pLeader->GetAttackerForHelper())
+        if (!pLeader->IsMounted() &&
+            (pLeader->IsInCombat() || pLeader->GetVictim() || pLeader->GetAttackerForHelper()))
             return true;
     }
 
@@ -239,16 +292,27 @@ bool PartyBotAI::GroupInCombat() const
     for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
     {
         Player* pMember = itr->getSource();
-        if (pMember && pMember != me && (pMember->IsInCombat() || pMember->GetAttackerForHelper()))
+        if (pMember && pMember != me && !pMember->IsMounted() &&
+            (pMember->IsInCombat() || pMember->GetVictim() || pMember->GetAttackerForHelper()))
             return true;
     }
 
     return false;
 }
 
+bool PartyBotAI::GroupInCombat() const
+{
+    // One mounted member can be attacked without pulling the others off their mounts; somebody has to put both feet
+    // on the ground and fight.
+    return GroupHasFightingMemberOnFoot();
+}
+
 bool PartyBotAI::DrinkAndEat()
 {
     if (m_isBuffing)
+        return false;
+
+    if (me->IsMounted())
         return false;
 
     if (me->GetVictim())
@@ -702,10 +766,16 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
     // A mage fights by casting. Unit::Attack(..., true) puts it in the melee attacking state, and the core then swings
     // at anything that closes while no spell is being prepared. Keep the mage's victim without enabling melee attacks,
     // but put it in combat explicitly: nothing else in a spell-only attack enters combat for it.
+    bool const wasInCombat = me->IsInCombat();
     bool const useMeleeAttack = me->GetClass() != CLASS_MAGE;
     bool const attackStarted = me->Attack(pVictim, useMeleeAttack);
     if (attackStarted || me->GetVictim() == pVictim)
     {
+        if (me->GetClass() == CLASS_PRIEST &&
+            GetRole() == ROLE_RANGE_DPS &&
+            !wasInCombat)
+            m_priestMindBlastOpener = true;
+
         if (!useMeleeAttack)
             me->SetInCombatWithVictim(pVictim);
 
@@ -768,6 +838,29 @@ bool PartyBotAI::HasMeleeAttackerInRange() const
     return false;
 }
 
+Unit* PartyBotAI::SelectNearestMeleeAttacker() const
+{
+    Unit* pNearest = nullptr;
+    float nearestDistance = 0.0f;
+
+    for (Unit* pAttacker : me->GetAttackers())
+    {
+        if (pAttacker->GetVictim() != me ||
+            !pAttacker->IsAlive() ||
+            !pAttacker->CanReachWithMeleeAutoAttack(me))
+            continue;
+
+        float const distance = me->GetCombatDistance(pAttacker);
+        if (!pNearest || distance < nearestDistance)
+        {
+            pNearest = pAttacker;
+            nearestDistance = distance;
+        }
+    }
+
+    return pNearest;
+}
+
 bool PartyBotAI::IsMarkedForCrowdControl(Unit const* pTarget) const
 {
     for (RaidTargetIcon mark : m_marksToCC)
@@ -799,6 +892,231 @@ uint8 PartyBotAI::CountUnmarkedEnemiesInRange(float range) const
             ++count;
 
     return count;
+}
+
+bool PartyBotAI::IsManaUser(Player const* pPlayer) const
+{
+    return pPlayer && pPlayer->GetCreateMana() > 0;
+}
+
+Player* PartyBotAI::SelectMissingGroupBuffTarget(SpellEntry const* pSingleSpellEntry,
+    SpellEntry const* pGroupSpellEntry, bool manaUsersOnly, uint8& missingCount) const
+{
+    missingCount = 0;
+    Player* pFirstMissing = nullptr;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember ||
+            pMember->IsGameMaster() ||
+            !pMember->IsAlive() ||
+            (manaUsersOnly && !IsManaUser(pMember)))
+            continue;
+
+        // A member has the buff when any rank of either the single target or the group spell is present.
+        if (pSingleSpellEntry && !IsValidBuffTarget(pMember, pSingleSpellEntry))
+            continue;
+        if (pGroupSpellEntry && !IsValidBuffTarget(pMember, pGroupSpellEntry))
+            continue;
+
+        if (!pFirstMissing &&
+            me->IsValidHelpfulTarget(pMember) &&
+            me->IsWithinLOSInMap(pMember) &&
+            me->IsWithinDist(pMember, 30.0f))
+            pFirstMissing = pMember;
+        ++missingCount;
+    }
+
+    return pFirstMissing;
+}
+
+bool PartyBotAI::PriestFortitudeBuffDelayPassed()
+{
+    std::set<ObjectGuid> currentMembers;
+    Group* pGroup = me->GetGroup();
+    if (pGroup)
+    {
+        for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+        {
+            if (Player* pMember = itr->getSource())
+                currentMembers.insert(pMember->GetObjectGuid());
+        }
+    }
+
+    if (!m_priestFortitudeMembersInitialized)
+    {
+        m_priestFortitudeMembers = currentMembers;
+        m_priestFortitudeMembersInitialized = true;
+        return true;
+    }
+
+    bool newMemberJoined = false;
+    for (ObjectGuid const& guid : currentMembers)
+    {
+        if (m_priestFortitudeMembers.find(guid) == m_priestFortitudeMembers.end())
+        {
+            newMemberJoined = true;
+            break;
+        }
+    }
+
+    m_priestFortitudeMembers = currentMembers;
+    if (newMemberJoined)
+        m_priestFortitudeBuffReadyAt = uint64(time(nullptr)) + 30;
+
+    return uint64(time(nullptr)) >= m_priestFortitudeBuffReadyAt;
+}
+
+bool PartyBotAI::PriestHasOutOfCombatBuffTarget()
+{
+    uint8 missing = 0;
+    if (m_spells.priest.pPrayerofFortitude)
+    {
+        if (!PriestFortitudeBuffDelayPassed())
+            return true;
+        if (SelectMissingGroupBuffTarget(m_spells.priest.pPowerWordFortitude,
+                m_spells.priest.pPrayerofFortitude, false, missing))
+            return true;
+    }
+    else if (m_spells.priest.pPowerWordFortitude &&
+             SelectMissingGroupBuffTarget(m_spells.priest.pPowerWordFortitude,
+                 nullptr, false, missing))
+        return true;
+
+    Map* pMap = me->GetMap();
+    bool const inDungeon = pMap && pMap->IsDungeon();
+    if (!inDungeon)
+    {
+        if (m_spells.priest.pDivineSpirit &&
+            SelectMissingGroupBuffTarget(m_spells.priest.pDivineSpirit,
+                nullptr, true, missing))
+            return true;
+    }
+    else if (m_spells.priest.pPrayerofSpirit)
+    {
+        Group* pGroup = me->GetGroup();
+        if (pGroup && pGroup->GetMembersCount() >= 5 &&
+            SelectMissingGroupBuffTarget(m_spells.priest.pDivineSpirit,
+                m_spells.priest.pPrayerofSpirit, true, missing) &&
+            missing >= 3)
+            return true;
+    }
+
+    return false;
+}
+
+bool PartyBotAI::PriestNeedsResurrectionOrDiseaseDispel()
+{
+    if (m_resurrectionSpell && SelectResurrectionTarget())
+        return true;
+
+    return m_spells.priest.pAbolishDisease &&
+        SelectDispelTarget(m_spells.priest.pAbolishDisease);
+}
+
+bool PartyBotAI::IsTankRoleWarrior(Player* pPlayer) const
+{
+    if (!pPlayer || pPlayer->GetClass() != CLASS_WARRIOR || !pPlayer->AI())
+        return false;
+
+    CombatBotBaseAI* pAI = dynamic_cast<CombatBotBaseAI*>(pPlayer->AI());
+    return pAI && pAI->GetRole() == ROLE_TANK;
+}
+
+bool PartyBotAI::IsTargetedByHostile() const
+{
+    return !me->GetAttackers().empty();
+}
+
+Unit* PartyBotAI::SelectDispelTargetWithPet(SpellEntry const* pSpellEntry) const
+{
+    if (Unit* pTarget = SelectDispelTarget(pSpellEntry))
+        return pTarget;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember)
+            continue;
+
+        Pet* pPet = pMember->GetPet();
+        if (pPet &&
+            me->IsValidHelpfulTarget(pPet) &&
+            IsValidDispelTarget(pPet, pSpellEntry) &&
+            me->IsWithinLOSInMap(pPet) &&
+            me->IsWithinDist(pPet, 30.0f))
+            return pPet;
+    }
+
+    return nullptr;
+}
+
+SpellEntry const* PartyBotAI::SelectPrayerOfHealing() const
+{
+    for (SpellEntry const* pSpellEntry : m_spellListDirectHeal)
+        if (pSpellEntry->SpellName[0].find("Prayer of Healing") != std::string::npos)
+            return pSpellEntry;
+
+    return nullptr;
+}
+
+Player* PartyBotAI::SelectPrayerOfHealingTarget(uint8& memberCount) const
+{
+    memberCount = 0;
+    Player* pFirstTarget = nullptr;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember ||
+            pMember == me ||
+            pMember->GetHealthPercent() >= 70.0f ||
+            !me->IsValidHelpfulTarget(pMember) ||
+            !me->IsWithinLOSInMap(pMember) ||
+            !me->IsWithinDist(pMember, 30.0f))
+            continue;
+
+        if (!pFirstTarget)
+            pFirstTarget = pMember;
+        ++memberCount;
+    }
+
+    return pFirstTarget;
+}
+
+bool PartyBotAI::GroupHealthAbove(float healthPercent) const
+{
+    if (me->GetHealthPercent() < healthPercent)
+        return false;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return true;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (pMember && pMember != me)
+        {
+            if (!pMember->IsAlive() || pMember->GetHealthPercent() < healthPercent)
+                return false;
+        }
+    }
+
+    return true;
 }
 
 Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
@@ -934,7 +1252,10 @@ Player* PartyBotAI::SelectShieldTarget() const
 
             if ((pMember->GetHealthPercent() < 90.0f) &&
                 !pMember->GetAttackers().empty() &&
-                !pMember->IsImmuneToMechanic(MECHANIC_SHIELD))
+                !pMember->IsImmuneToMechanic(MECHANIC_SHIELD) &&
+                !(m_role == ROLE_HEALER &&
+                  IsTankRoleWarrior(pMember) &&
+                  pMember->GetHealthPercent() > 60.0f))
                 return pMember;
         }
     }
@@ -1062,7 +1383,10 @@ void PartyBotAI::MovementInform(uint32 movementType, uint32 /*data*/)
     if (movementType != DISTANCING_MOTION_TYPE)
         return;
 
-    if (me->GetClass() == CLASS_MAGE && me->IsInCombat() && me->GetVictim())
+    bool const casterFinishedKiting =
+        me->GetClass() == CLASS_MAGE ||
+        (me->GetClass() == CLASS_PRIEST && GetRole() == ROLE_RANGE_DPS);
+    if (casterFinishedKiting && me->IsInCombat() && me->GetVictim())
         m_updateTimer.Reset(0);
 }
 
@@ -1173,6 +1497,9 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     if (!pLeader->IsInWorld())
         return;
 
+    if (me->GetClass() == CLASS_PRIEST && m_spells.priest.pPrayerofFortitude)
+        PriestFortitudeBuffDelayPassed();
+
     if (pLeader->InBattleGround() &&
         !me->InBattleGround())
     {
@@ -1276,6 +1603,11 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     if (EnsureMageIceBarrier())
         return;
 
+    if (me->GetClass() == CLASS_PRIEST &&
+        GetRole() == ROLE_HEALER &&
+        me->GetShapeshiftForm() == FORM_SHADOW)
+        me->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
     if (me->GetTargetGuid() == me->GetObjectGuid())
         me->ClearTarget();
 
@@ -1346,13 +1678,30 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     }
 
     Unit* pVictim = me->GetVictim();
+    bool const groupAllMounted = GroupAllMounted();
+    bool const groupFightingOnFoot = GroupHasFightingMemberOnFoot();
+    bool const blockMountedGroupCombat =
+        groupAllMounted ||
+        (GroupHasFightingMemberMounted() && !groupFightingOnFoot);
 
-    if (GetRole() != ROLE_HEALER)
+    if (blockMountedGroupCombat && pVictim)
+    {
+        me->AttackStop();
+        pVictim = nullptr;
+        if (me->GetClass() == CLASS_PRIEST)
+            m_priestMindBlastOpener = false;
+    }
+
+    if (!blockMountedGroupCombat && GetRole() != ROLE_HEALER)
     {
         if (!pVictim || !IsValidHostileTargetForAttack(pVictim))
         {
             if (pVictim)
+            {
                 me->AttackStop();
+                if (me->GetClass() == CLASS_PRIEST)
+                    m_priestMindBlastOpener = false;
+            }
 
             if (Unit* pVictim = SelectAttackTarget(pLeader))
             {
@@ -1381,7 +1730,7 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         // does, with the three seconds that a summon of these mounts takes; a bot that has no mount of its own to
         // ride - because it has not reached the level of one, or because it has been robbed of the spell - stays on
         // foot rather than wearing the mount of somebody else.
-        if (pLeader->IsMounted() && !me->GetVictim())
+        if (pLeader->IsMounted() && !me->GetVictim() && !GroupInCombat())
         {
             if (!me->IsMounted() && !me->IsNonMeleeSpellCasted())
             {
@@ -1431,16 +1780,28 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         }
     }
 
-    if (me->IsInCombat() || me->GetVictim())
+    if (!blockMountedGroupCombat &&
+        (me->IsInCombat() ||
+         me->GetVictim() ||
+         (GetRole() == ROLE_HEALER && groupFightingOnFoot)))
         UpdateInCombatAI();
 }
 
 
 void PartyBotAI::UpdateOutOfCombatAI()
 {
+    if (me->IsMounted())
+        return;
+
+    bool const waitInShadowform =
+        me->GetClass() == CLASS_PRIEST &&
+        GetRole() != ROLE_HEALER &&
+        me->GetShapeshiftForm() == FORM_SHADOW &&
+        PriestNeedsResurrectionOrDiseaseDispel();
+
     if (!IsInDuel())
     {
-        if (m_resurrectionSpell)
+        if (!waitInShadowform && m_resurrectionSpell)
             if (Player* pTarget = SelectResurrectionTarget())
                 if (CanTryToCastSpell(pTarget, m_resurrectionSpell))
                     if (DoCastSpell(pTarget, m_resurrectionSpell) == SPELL_CAST_OK)
@@ -1487,6 +1848,16 @@ void PartyBotAI::UpdateOutOfCombatAI()
 
 void PartyBotAI::UpdateInCombatAI()
 {
+    if (m_role == ROLE_HEALER &&
+        me->GetClass() == CLASS_PRIEST &&
+        IsTargetedByHostile() &&
+        m_spells.priest.pFade &&
+        CanTryToCastSpell(me, m_spells.priest.pFade))
+    {
+        if (DoCastSpell(me, m_spells.priest.pFade) == SPELL_CAST_OK)
+            return;
+    }
+
     if (!IsInDuel())
     {
         if (m_role == ROLE_TANK)
@@ -1522,6 +1893,36 @@ void PartyBotAI::UpdateInCombatAI()
 
     if (CheckForDispelTargets())
         return;
+
+    // Every healing talent uses the shadow priest's retreat: step to eight yards from a melee attacker that is held,
+    // then stop there and return to the class healing routine.
+    if (m_role == ROLE_HEALER)
+    {
+        Unit* pMeleeAttacker = SelectNearestMeleeAttacker();
+        MovementGeneratorType const movementType =
+            me->GetMotionMaster()->GetCurrentMovementGeneratorType();
+
+        if (pMeleeAttacker &&
+            movementType != DISTANCING_MOTION_TYPE &&
+            !me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE) &&
+            CanRunAwayFrom(pMeleeAttacker) &&
+            RunAwayFromTarget(pMeleeAttacker))
+        {
+            me->SetCasterChaseDistance(GetChaseDistance());
+            return;
+        }
+
+        if (!pMeleeAttacker && movementType == DISTANCING_MOTION_TYPE)
+        {
+            if (!me->IsStopped())
+                me->StopMoving();
+            me->GetMotionMaster()->Clear(false, true);
+            me->GetMotionMaster()->MoveIdle();
+        }
+
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE)
+            return;
+    }
 
     // The chase generator keeps a distance from the target all by itself, and it is meant for the same thing as
     // the running of the bot: a distance is worth keeping only while the target cannot close it again. So when the
@@ -1570,9 +1971,38 @@ void PartyBotAI::UpdateInCombatAI()
         UseTrinketEffects();
 }
 
+Unit* PartyBotAI::SelectHostileDispelTarget(SpellEntry const* pSpellEntry) const
+{
+    if (!pSpellEntry || GroupAllMounted() || (!me->IsInCombat() && !GroupInCombat()))
+        return nullptr;
+
+    if (Unit* pVictim = me->GetVictim())
+    {
+        if (IsValidDispelTarget(pVictim, pSpellEntry) &&
+            CanTryToCastSpell(pVictim, pSpellEntry))
+            return pVictim;
+    }
+
+    std::list<Unit*> targets;
+    me->GetEnemyListInRadiusAround(me, GetSpellMaxRangeForBot(pSpellEntry), targets);
+    for (Unit* pTarget : targets)
+    {
+        if (IsValidHostileTarget(pTarget) &&
+            me->IsWithinLOSInMap(pTarget) &&
+            IsValidDispelTarget(pTarget, pSpellEntry) &&
+            CanTryToCastSpell(pTarget, pSpellEntry))
+            return pTarget;
+    }
+
+    return nullptr;
+}
+
 bool PartyBotAI::CheckForDispelTargets()
 {
-    if (me->GetShapeshiftForm() != FORM_NONE)
+    bool const priestInShadowform =
+        me->GetClass() == CLASS_PRIEST &&
+        me->GetShapeshiftForm() == FORM_SHADOW;
+    if (me->GetShapeshiftForm() != FORM_NONE && !priestInShadowform)
         return false;
 
     switch (me->GetClass())
@@ -1638,7 +2068,16 @@ bool PartyBotAI::CheckForDispelTargets()
         {
             if (m_spells.priest.pDispelMagic)
             {
-                if (Unit* pFriend = SelectDispelTarget(m_spells.priest.pDispelMagic))
+                if (Unit* pVictim = SelectHostileDispelTarget(m_spells.priest.pDispelMagic))
+                {
+                    if (DoCastSpell(pVictim, m_spells.priest.pDispelMagic) == SPELL_CAST_OK)
+                        return true;
+                }
+
+                Unit* pFriend = m_role == ROLE_HEALER ?
+                    SelectDispelTargetWithPet(m_spells.priest.pDispelMagic) :
+                    SelectDispelTarget(m_spells.priest.pDispelMagic);
+                if (pFriend)
                 {
                     if (CanTryToCastSpell(pFriend, m_spells.priest.pDispelMagic))
                     {
@@ -1647,9 +2086,15 @@ bool PartyBotAI::CheckForDispelTargets()
                     }
                 }
             }
-            if (m_spells.priest.pAbolishDisease)
+
+            bool const shadowPriestNeedsOnlyMagicDispel =
+                me->GetShapeshiftForm() == FORM_SHADOW;
+            if (!shadowPriestNeedsOnlyMagicDispel && m_spells.priest.pAbolishDisease)
             {
-                if (Unit* pFriend = SelectDispelTarget(m_spells.priest.pAbolishDisease))
+                Unit* pFriend = m_role == ROLE_HEALER ?
+                    SelectDispelTargetWithPet(m_spells.priest.pAbolishDisease) :
+                    SelectDispelTarget(m_spells.priest.pAbolishDisease);
+                if (pFriend)
                 {
                     if (CanTryToCastSpell(pFriend, m_spells.priest.pAbolishDisease))
                     {
@@ -2229,7 +2674,34 @@ void PartyBotAI::UpdateInCombatAI_Hunter()
 void PartyBotAI::UpdateOutOfCombatAI_Mage()
 {
     SpellEntry const* pBuffSpell = nullptr;
-    if (Player* pTarget = SelectBuffTarget(m_spells.mage.pArcaneIntellect, m_spells.mage.pArcaneBrilliance, pBuffSpell))
+    Player* pTarget = nullptr;
+    uint8 missingIntellect = 0;
+    Map* pMap = me->GetMap();
+    bool const inDungeon = pMap && pMap->IsDungeon();
+
+    if (!inDungeon)
+    {
+        pTarget = SelectMissingGroupBuffTarget(m_spells.mage.pArcaneIntellect, nullptr, true, missingIntellect);
+        pBuffSpell = m_spells.mage.pArcaneIntellect;
+    }
+    else if (m_spells.mage.pArcaneBrilliance)
+    {
+        Group* pGroup = me->GetGroup();
+        if (pGroup && pGroup->GetMembersCount() >= 5)
+        {
+            pTarget = SelectMissingGroupBuffTarget(m_spells.mage.pArcaneIntellect,
+                m_spells.mage.pArcaneBrilliance, true, missingIntellect);
+            pBuffSpell = missingIntellect >= 2 ?
+                m_spells.mage.pArcaneBrilliance : m_spells.mage.pArcaneIntellect;
+        }
+    }
+    else
+    {
+        pTarget = SelectMissingGroupBuffTarget(m_spells.mage.pArcaneIntellect, nullptr, true, missingIntellect);
+        pBuffSpell = m_spells.mage.pArcaneIntellect;
+    }
+
+    if (pTarget && pBuffSpell)
     {
         if (CanTryToCastSpell(pTarget, pBuffSpell))
         {
@@ -2504,47 +2976,167 @@ void PartyBotAI::UpdateInCombatAI_Mage()
 
 void PartyBotAI::UpdateOutOfCombatAI_Priest()
 {
-    SpellEntry const* pBuffSpell = nullptr;
-    if (Player* pTarget = SelectBuffTarget(m_spells.priest.pPowerWordFortitude, m_spells.priest.pPrayerofFortitude, pBuffSpell))
+    if (me->IsMounted())
+        return;
+
+    bool const needsResurrectionOrDisease = PriestNeedsResurrectionOrDiseaseDispel();
+    if (needsResurrectionOrDisease &&
+        GetRole() != ROLE_HEALER &&
+        me->GetShapeshiftForm() == FORM_SHADOW)
     {
-        if (CanTryToCastSpell(pTarget, pBuffSpell))
+        uint64 const now = uint64(time(nullptr));
+        if (!m_shadowformDispelWaitUntil)
         {
-            if (DoCastSpell(pTarget, pBuffSpell) == SPELL_CAST_OK)
+            m_shadowformDispelWaitUntil = now + 20;
+            return;
+        }
+
+        if (now < m_shadowformDispelWaitUntil)
+            return;
+
+        me->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+        m_shadowformDispelWaitUntil = 0;
+
+        if (m_resurrectionSpell)
+        {
+            if (Player* pTarget = SelectResurrectionTarget())
+                if (CanTryToCastSpell(pTarget, m_resurrectionSpell))
+                    if (DoCastSpell(pTarget, m_resurrectionSpell) == SPELL_CAST_OK)
+                        return;
+        }
+
+        if (m_spells.priest.pAbolishDisease)
+        {
+            if (Player* pTarget = SelectDispelTarget(m_spells.priest.pAbolishDisease))
+                if (CanTryToCastSpell(pTarget, m_spells.priest.pAbolishDisease))
+                    if (DoCastSpell(pTarget, m_spells.priest.pAbolishDisease) == SPELL_CAST_OK)
+                        return;
+        }
+
+        return;
+    }
+
+    if (!needsResurrectionOrDisease)
+        m_shadowformDispelWaitUntil = 0;
+
+    // The priest can not refresh the group's Holy buffs in Shadowform. Leave the form while a buff is still owed,
+    // and put it back once the buff routine has nothing left to do.
+    if (me->GetShapeshiftForm() == FORM_SHADOW && PriestHasOutOfCombatBuffTarget())
+        me->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+
+    if (m_spells.priest.pPrayerofFortitude)
+    {
+        if (PriestFortitudeBuffDelayPassed())
+        {
+            uint8 missingStamina = 0;
+            Player* pTarget = SelectMissingGroupBuffTarget(m_spells.priest.pPowerWordFortitude,
+                m_spells.priest.pPrayerofFortitude, false, missingStamina);
+            if (pTarget)
             {
-                m_isBuffing = true;
-                me->ClearTarget();
-                return;
+                SpellEntry const* pBuffSpell = missingStamina >= 3 ?
+                    m_spells.priest.pPrayerofFortitude : m_spells.priest.pPowerWordFortitude;
+                if (pBuffSpell == m_spells.priest.pPrayerofFortitude &&
+                    m_spells.priest.pInnerFocus &&
+                    CanTryToCastSpell(me, m_spells.priest.pInnerFocus))
+                {
+                    if (DoCastSpell(me, m_spells.priest.pInnerFocus) == SPELL_CAST_OK)
+                    {
+                        m_isBuffing = true;
+                        me->ClearTarget();
+                        return;
+                    }
+                }
+
+                if (pBuffSpell && CanTryToCastSpell(pTarget, pBuffSpell))
+                {
+                    if (DoCastSpell(pTarget, pBuffSpell) == SPELL_CAST_OK)
+                    {
+                        m_isBuffing = true;
+                        me->ClearTarget();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    else if (m_spells.priest.pPowerWordFortitude)
+    {
+        uint8 missingStamina = 0;
+        if (Player* pTarget = SelectMissingGroupBuffTarget(m_spells.priest.pPowerWordFortitude,
+                nullptr, false, missingStamina))
+        {
+            if (CanTryToCastSpell(pTarget, m_spells.priest.pPowerWordFortitude))
+            {
+                if (DoCastSpell(pTarget, m_spells.priest.pPowerWordFortitude) == SPELL_CAST_OK)
+                {
+                    m_isBuffing = true;
+                    me->ClearTarget();
+                    return;
+                }
             }
         }
     }
 
-    if (Player* pTarget = SelectBuffTarget(m_spells.priest.pDivineSpirit, m_spells.priest.pPrayerofSpirit, pBuffSpell))
+    Map* pMap = me->GetMap();
+    bool const inDungeon = pMap && pMap->IsDungeon();
+    if (!inDungeon)
     {
-        if (CanTryToCastSpell(pTarget, pBuffSpell))
+        if (m_spells.priest.pDivineSpirit)
         {
-            if (DoCastSpell(pTarget, pBuffSpell) == SPELL_CAST_OK)
+            uint8 missingSpirit = 0;
+            if (Player* pTarget = SelectMissingGroupBuffTarget(m_spells.priest.pDivineSpirit,
+                    nullptr, true, missingSpirit))
             {
-                m_isBuffing = true;
-                me->ClearTarget();
-                return;
+                if (CanTryToCastSpell(pTarget, m_spells.priest.pDivineSpirit))
+                {
+                    if (DoCastSpell(pTarget, m_spells.priest.pDivineSpirit) == SPELL_CAST_OK)
+                    {
+                        m_isBuffing = true;
+                        me->ClearTarget();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    else if (m_spells.priest.pPrayerofSpirit)
+    {
+        Group* pGroup = me->GetGroup();
+        if (pGroup && pGroup->GetMembersCount() >= 5)
+        {
+            uint8 missingSpirit = 0;
+            Player* pTarget = SelectMissingGroupBuffTarget(m_spells.priest.pDivineSpirit,
+                m_spells.priest.pPrayerofSpirit, true, missingSpirit);
+            if (pTarget && missingSpirit >= 3 &&
+                CanTryToCastSpell(pTarget, m_spells.priest.pPrayerofSpirit))
+            {
+                if (DoCastSpell(pTarget, m_spells.priest.pPrayerofSpirit) == SPELL_CAST_OK)
+                {
+                    m_isBuffing = true;
+                    me->ClearTarget();
+                    return;
+                }
             }
         }
     }
 
-    if (Player* pTarget = SelectBuffTarget(m_spells.priest.pShadowProtection, m_spells.priest.pPrayerofShadowProtection, pBuffSpell))
+    if (m_spells.priest.pShadowform &&
+        GetRole() != ROLE_HEALER &&
+        me->GetShapeshiftForm() != FORM_SHADOW &&
+        !PriestNeedsResurrectionOrDiseaseDispel() &&
+        !PriestHasOutOfCombatBuffTarget() &&
+        CanTryToCastSpell(me, m_spells.priest.pShadowform))
     {
-        if (CanTryToCastSpell(pTarget, pBuffSpell))
+        if (DoCastSpell(me, m_spells.priest.pShadowform) == SPELL_CAST_OK)
         {
-            if (DoCastSpell(pTarget, pBuffSpell) == SPELL_CAST_OK)
-            {
-                m_isBuffing = true;
-                me->ClearTarget();
-                return;
-            }
+            m_isBuffing = true;
+            me->ClearTarget();
+            return;
         }
     }
 
     if (m_spells.priest.pInnerFire &&
+        !me->HasAura(m_spells.priest.pInnerFire->Id) &&
         CanTryToCastSpell(me, m_spells.priest.pInnerFire))
     {
         if (DoCastSpell(me, m_spells.priest.pInnerFire) == SPELL_CAST_OK)
@@ -2562,6 +3154,18 @@ void PartyBotAI::UpdateOutOfCombatAI_Priest()
         m_isBuffing = false;
     }
 
+    if (m_spells.priest.pPowerWordShield &&
+        !me->HasAura(m_spells.priest.pPowerWordShield->Id) &&
+        CanTryToCastSpell(me, m_spells.priest.pPowerWordShield))
+    {
+        if (DoCastSpell(me, m_spells.priest.pPowerWordShield) == SPELL_CAST_OK)
+        {
+            m_isBuffing = true;
+            me->ClearTarget();
+            return;
+        }
+    }
+
     if (m_role == ROLE_HEALER &&
         FindAndHealInjuredAlly())
         return;
@@ -2572,45 +3176,50 @@ void PartyBotAI::UpdateOutOfCombatAI_Priest()
 
 void PartyBotAI::UpdateInCombatAI_Priest()
 {
-    if (m_spells.priest.pPowerWordShield &&
-        CanTryToCastSpell(me, m_spells.priest.pPowerWordShield))
+    if (!me->IsMounted())
     {
-        if (DoCastSpell(me, m_spells.priest.pPowerWordShield) == SPELL_CAST_OK)
-            return;
-    }
-
-    if (!me->GetAttackers().empty() &&
-        m_role != ROLE_TANK)
-    {
-        if (m_spells.priest.pFade &&
-            CanTryToCastSpell(me, m_spells.priest.pFade))
+        if (m_spells.priest.pPowerWordShield &&
+            !me->HasAura(m_spells.priest.pPowerWordShield->Id) &&
+            CanTryToCastSpell(me, m_spells.priest.pPowerWordShield))
         {
-            if (DoCastSpell(me, m_spells.priest.pFade) == SPELL_CAST_OK)
+            if (DoCastSpell(me, m_spells.priest.pPowerWordShield) == SPELL_CAST_OK)
                 return;
         }
 
-        if (m_spells.priest.pShackleUndead)
+        if (m_spells.priest.pInnerFire &&
+            !me->HasAura(m_spells.priest.pInnerFire->Id) &&
+            CanTryToCastSpell(me, m_spells.priest.pInnerFire))
         {
-            Unit* pAttacker = *me->GetAttackers().begin();
-            if ((pAttacker->GetHealth() > me->GetHealth()) &&
-                CanTryToCastSpell(pAttacker, m_spells.priest.pShackleUndead) &&
-                CanUseCrowdControl(m_spells.priest.pShackleUndead, pAttacker))
-            {
-                if (DoCastSpell(pAttacker, m_spells.priest.pShackleUndead) == SPELL_CAST_OK)
-                    return;
-            }
+            if (DoCastSpell(me, m_spells.priest.pInnerFire) == SPELL_CAST_OK)
+                return;
         }
-    }
 
-    if (m_spells.priest.pInnerFocus &&
-       (me->GetPowerPercent(POWER_MANA) < 50.0f) &&
-        CanTryToCastSpell(me, m_spells.priest.pInnerFocus))
-    {
-        DoCastSpell(me, m_spells.priest.pInnerFocus);
+        if (m_spells.priest.pShadowform &&
+            GetRole() != ROLE_HEALER &&
+            me->GetShapeshiftForm() != FORM_SHADOW &&
+            CanTryToCastSpell(me, m_spells.priest.pShadowform))
+        {
+            if (DoCastSpell(me, m_spells.priest.pShadowform) == SPELL_CAST_OK)
+                return;
+        }
     }
 
     if (GetRole() == ROLE_HEALER || (!me->GetVictim() && me->GetShapeshiftForm() == FORM_NONE))
     {
+        // Three injured party members turn a single target heal into Prayer of Healing.
+        if (SpellEntry const* pPrayerOfHealing = SelectPrayerOfHealing())
+        {
+            uint8 injuredMembers = 0;
+            Player* pTarget = SelectPrayerOfHealingTarget(injuredMembers);
+            if (injuredMembers >= 3 &&
+                pTarget &&
+                CanTryToCastSpell(pTarget, pPrayerOfHealing))
+            {
+                if (DoCastSpell(pTarget, pPrayerOfHealing) == SPELL_CAST_OK)
+                    return;
+            }
+        }
+
         // Shield allies being attacked.
         if (m_spells.priest.pPowerWordShield)
         {
@@ -2636,28 +3245,142 @@ void PartyBotAI::UpdateInCombatAI_Priest()
 
         if (GetRole() == ROLE_HEALER && FindAndPreHealTarget())
             return;
+
+        if (GetRole() == ROLE_HEALER &&
+            GroupHealthAbove(90.0f) &&
+            me->HasSpell(PB_SPELL_SHOOT_WAND) &&
+            !me->IsMounted() &&
+            !me->IsMoving() &&
+            !me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+        {
+            if (Unit* pTarget = SelectPartyAttackTarget())
+                me->CastSpell(pTarget, PB_SPELL_SHOOT_WAND, false);
+        }
     }
     else if (Unit* pVictim = me->GetVictim())
     {
-        if (m_spells.priest.pShadowform &&
-            CanTryToCastSpell(me, m_spells.priest.pShadowform))
+        if (HasMeleeAttackerInRange() &&
+            me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE &&
+            !me->HasUnitState(UNIT_STATE_CAN_NOT_MOVE) &&
+            CanRunAwayFrom(pVictim) &&
+            RunAwayFromTarget(pVictim))
         {
-            if (DoCastSpell(me, m_spells.priest.pShadowform) == SPELL_CAST_OK)
+            me->SetCasterChaseDistance(m_spells.priest.pMindFlay ?
+                GetSpellMaxRangeForBot(m_spells.priest.pMindFlay) : GetChaseDistance());
+            return;
+        }
+
+        bool const enemyHeld =
+            pVictim->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED) ||
+            pVictim->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+            pVictim->HasAuraType(SPELL_AURA_MOD_STUN) ||
+            pVictim->HasAuraType(SPELL_AURA_MOD_CONFUSE);
+        bool const hasEnoughDistance = me->GetCombatDistance(pVictim) >= PB_RUN_AWAY_DISTANCE;
+        if (enemyHeld && hasEnoughDistance &&
+            (me->IsMoving() ||
+             me->GetMotionMaster()->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE))
+        {
+            if (!me->IsStopped())
+                me->StopMoving();
+            me->GetMotionMaster()->Clear(false, true);
+            me->GetMotionMaster()->MoveIdle();
+        }
+
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE)
+            return;
+
+        // Mind Blast opens the fight before the maintained debuffs or the Mind Flay filler.
+        if (m_priestMindBlastOpener)
+        {
+            if (!m_spells.priest.pMindBlast)
+                m_priestMindBlastOpener = false;
+            else
+            {
+                if (m_spells.priest.pInnerFocus &&
+                    CanTryToCastSpell(me, m_spells.priest.pInnerFocus))
+                {
+                    if (DoCastSpell(me, m_spells.priest.pInnerFocus) == SPELL_CAST_OK)
+                        return;
+                }
+
+                if (CanTryToCastSpell(pVictim, m_spells.priest.pMindBlast))
+                {
+                    if (DoCastSpell(pVictim, m_spells.priest.pMindBlast) == SPELL_CAST_OK)
+                    {
+                        m_priestMindBlastOpener = false;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Inner Focus is consumed by the next spell, so Mind Blast takes it before either maintained debuff.
+        if (m_spells.priest.pInnerFocus &&
+            me->HasAura(m_spells.priest.pInnerFocus->Id))
+        {
+            if (m_spells.priest.pMindBlast &&
+                CanTryToCastSpell(pVictim, m_spells.priest.pMindBlast))
+            {
+                if (DoCastSpell(pVictim, m_spells.priest.pMindBlast) == SPELL_CAST_OK)
+                    return;
+            }
+
+            return;
+        }
+
+        // The two maintained debuffs go back up before another damage spell once the current cast has ended.
+        if (!me->IsNonMeleeSpellCasted(false, false, true))
+        {
+            if (m_spells.priest.pShadowWordPain &&
+                CanTryToCastSpell(pVictim, m_spells.priest.pShadowWordPain))
+            {
+                if (DoCastSpell(pVictim, m_spells.priest.pShadowWordPain) == SPELL_CAST_OK)
+                    return;
+            }
+
+            if (m_spells.priest.pVampiricEmbrace &&
+                !me->HasAura(m_spells.priest.pVampiricEmbrace->Id) &&
+                CanTryToCastSpell(pVictim, m_spells.priest.pVampiricEmbrace))
+            {
+                if (DoCastSpell(pVictim, m_spells.priest.pVampiricEmbrace) == SPELL_CAST_OK)
+                    return;
+            }
+        }
+
+        if (m_spells.priest.pInnerFocus &&
+            m_spells.priest.pMindBlast &&
+            CanTryToCastSpell(me, m_spells.priest.pInnerFocus) &&
+            CanTryToCastSpell(pVictim, m_spells.priest.pMindBlast))
+        {
+            if (DoCastSpell(me, m_spells.priest.pInnerFocus) == SPELL_CAST_OK)
                 return;
         }
 
-        if (m_spells.priest.pSilence &&
-            pVictim->IsNonMeleeSpellCasted() &&
-            CanTryToCastSpell(pVictim, m_spells.priest.pSilence))
+        bool const mindFlayInRange =
+            m_spells.priest.pMindFlay && IsTargetInSpellRange(pVictim, m_spells.priest.pMindFlay);
+        if (m_spells.priest.pMindFlay && !mindFlayInRange)
         {
-            if (DoCastSpell(pVictim, m_spells.priest.pSilence) == SPELL_CAST_OK)
+            bool const canMove =
+                !me->HasUnitState(UNIT_STATE_NO_FREE_MOVE) &&
+                !me->HasAuraType(SPELL_AURA_MOD_ROOT) &&
+                !me->HasAuraType(SPELL_AURA_MOD_STUN) &&
+                !me->HasAuraType(SPELL_AURA_MOD_CONFUSE) &&
+                !me->HasAuraType(SPELL_AURA_MOD_FEAR);
+            if (canMove)
+            {
+                MovementGeneratorType const movementType =
+                    me->GetMotionMaster()->GetCurrentMovementGeneratorType();
+                if (movementType == IDLE_MOTION_TYPE || movementType == FOLLOW_MOTION_TYPE)
+                    BeginChasing(pVictim);
                 return;
+            }
         }
 
-        if (m_spells.priest.pVampiricEmbrace &&
-            CanTryToCastSpell(pVictim, m_spells.priest.pVampiricEmbrace))
+        if (m_spells.priest.pMindFlay &&
+            mindFlayInRange &&
+            CanTryToCastSpell(pVictim, m_spells.priest.pMindFlay))
         {
-            if (DoCastSpell(pVictim, m_spells.priest.pVampiricEmbrace) == SPELL_CAST_OK)
+            if (DoCastSpell(pVictim, m_spells.priest.pMindFlay) == SPELL_CAST_OK)
                 return;
         }
 
@@ -2668,71 +3391,8 @@ void PartyBotAI::UpdateInCombatAI_Priest()
                 return;
         }
 
-        if (m_spells.priest.pShadowWordPain &&
-            CanTryToCastSpell(pVictim, m_spells.priest.pShadowWordPain))
-        {
-            if (DoCastSpell(pVictim, m_spells.priest.pShadowWordPain) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.priest.pDevouringPlague &&
-            CanTryToCastSpell(pVictim, m_spells.priest.pDevouringPlague))
-        {
-            if (DoCastSpell(pVictim, m_spells.priest.pDevouringPlague) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.priest.pPsychicScream &&
-            GetAttackersInRangeCount(10.0f) &&
-            CanTryToCastSpell(me, m_spells.priest.pPsychicScream))
-        {
-            if (DoCastSpell(me, m_spells.priest.pPsychicScream) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.priest.pManaBurn &&
-           (pVictim->GetPowerType() == POWER_MANA) &&
-            CanTryToCastSpell(pVictim, m_spells.priest.pManaBurn))
-        {
-            if (DoCastSpell(pVictim, m_spells.priest.pManaBurn) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.priest.pMindFlay &&
-           (!GetAttackersInRangeCount(10.0f) || me->HasAuraType(SPELL_AURA_SCHOOL_ABSORB)) &&
-            CanTryToCastSpell(pVictim, m_spells.priest.pMindFlay))
-        {
-            if (DoCastSpell(pVictim, m_spells.priest.pMindFlay) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE
-            && me->GetDistance(pVictim) > 30.0f)
-        {
-            BeginChasing(pVictim);
-        }
-
-        if (me->GetShapeshiftForm() == FORM_NONE)
-        {
-            if (m_spells.priest.pHolyNova &&
-                GetAttackersInRangeCount(10.0f) > 2 &&
-                CanTryToCastSpell(me, m_spells.priest.pHolyNova))
-            {
-                if (DoCastSpell(me, m_spells.priest.pHolyNova) == SPELL_CAST_OK)
-                    return;
-            }
-
-            if (m_spells.priest.pSmite &&
-                CanTryToCastSpell(pVictim, m_spells.priest.pSmite))
-            {
-                if (DoCastSpell(pVictim, m_spells.priest.pSmite) == SPELL_CAST_OK)
-                    return;
-            }
-        }
-
         if (me->HasSpell(PB_SPELL_SHOOT_WAND) &&
            !me->IsMoving() &&
-           (me->GetPowerPercent(POWER_MANA) < 10.0f) &&
            !me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
             me->CastSpell(pVictim, PB_SPELL_SHOOT_WAND, false);
     }

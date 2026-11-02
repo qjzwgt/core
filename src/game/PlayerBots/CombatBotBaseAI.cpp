@@ -3492,9 +3492,9 @@ void CombatBotBaseAI::UpdateVisualHonorRankBasedOnItems()
 }
 
 // The ordinary distance of a battle bot, which is on the same ground in every battleground. BeginChasing() raises a
-// ranged damage bot to the 30 yards of its common attack spells, and a mage to the modified range of Frostbolt. A
-// party bot answers by the ground that it stands on, since a party plays in dungeons, in the open world, and in a
-// battleground.
+// ranged damage bot to the 30 yards of its common attack spells, a mage to the modified range of Frostbolt, and a
+// shadow priest to the modified range of Mind Flay. A party bot answers by the ground that it stands on, since a
+// party plays in dungeons, in the open world, and in a battleground.
 float CombatBotBaseAI::GetChaseDistance() const
 {
     return 25.0f;
@@ -3503,17 +3503,19 @@ float CombatBotBaseAI::GetChaseDistance() const
 void CombatBotBaseAI::BeginChasing(Unit* pVictim) const
 {
     float chaseDistance = GetChaseDistance();
-    SpellEntry const* pMageRangeSpell = nullptr;
+    SpellEntry const* pRangeSpell = nullptr;
     if (me->GetClass() == CLASS_MAGE)
-        pMageRangeSpell = m_spells.mage.pFrostbolt ? m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
+        pRangeSpell = m_spells.mage.pFrostbolt ? m_spells.mage.pFrostbolt : m_spells.mage.pFireball;
+    else if (me->GetClass() == CLASS_PRIEST && m_role == ROLE_RANGE_DPS)
+        pRangeSpell = m_spells.priest.pMindFlay;
 
-    if (pMageRangeSpell)
-        chaseDistance = GetSpellMaxRangeForBot(pMageRangeSpell);
+    if (pRangeSpell)
+        chaseDistance = GetSpellMaxRangeForBot(pRangeSpell);
     else if (m_role == ROLE_RANGE_DPS && chaseDistance < 30.0f)
         chaseDistance = 30.0f;
 
     bool const useCasterMovement =
-        pMageRangeSpell ||
+        pRangeSpell ||
         ((m_role == ROLE_RANGE_DPS || m_role == ROLE_HEALER) &&
           IsRangedDamageClass(me->GetClass()) &&
           !IsAttackSpeedOverridenForm(me->GetShapeshiftForm()) &&

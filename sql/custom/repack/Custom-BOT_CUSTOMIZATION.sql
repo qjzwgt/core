@@ -407,44 +407,58 @@ INSERT INTO `playerbot_talent_build` VALUES (5, 0, 12, 14889, 5, 'Holy Specializ
 INSERT INTO `playerbot_talent_build` VALUES (5, 0, 13, 27900, 5, 'Spell Warding');
 INSERT INTO `playerbot_talent_build` VALUES (5, 0, 14, 18530, 5, 'Divine Fury');
 
--- holy (神圣骑士), class 5 priest talent page 1: 51 points, primary tree Holy
+-- holy (神圣牧师), class 5 priest talent page 1: 51 points, primary tree Holy
+-- The steps are the order in which a holy priest spends its points from level 10 to 60: the Holy tree goes
+-- Holy Specialization, Divine Fury, Inspiration, Healing Focus, Improved Healing, Holy Reach, Spiritual Guidance
+-- and Spiritual Healing. The 20 points in Discipline then go to Unbreakable Will, Improved Power Word: Shield,
+-- Improved Power Word: Fortitude, Inner Focus, Meditation, Martyrdom, Mental Agility and Divine Spirit.
 DELETE FROM `playerbot_talent_build` WHERE `class`=5 AND `talent_page`=1;
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 1, 14913, 2, 'Healing Focus');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 2, 14908, 3, 'Improved Renew');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 3, 14889, 5, 'Holy Specialization');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 4, 27900, 5, 'Spell Warding');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 5, 18530, 5, 'Divine Fury');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 6, 15237, 1, 'Holy Nova');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 7, 27811, 3, 'Blessed Recovery');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 8, 14892, 3, 'Inspiration');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 9, 14912, 3, 'Improved Healing');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 10, 724, 1, 'Lightwell');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 1, 14889, 5, 'Holy Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 2, 18530, 5, 'Divine Fury');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 3, 14892, 3, 'Inspiration');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 4, 14913, 2, 'Healing Focus');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 5, 14912, 3, 'Improved Healing');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 6, 27789, 2, 'Holy Reach');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 7, 15031, 5, 'Spiritual Guidance');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 8, 14898, 5, 'Spiritual Healing');
 --   then 20 points of Discipline (talent page 0)
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 11, 14522, 5, 'Unbreakable Will');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 12, 14523, 5, 'Silent Resolve');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 13, 14748, 3, 'Improved Power Word: Shield');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 14, 14751, 1, 'Inner Focus');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 15, 14521, 3, 'Meditation');
-INSERT INTO `playerbot_talent_build` VALUES (5, 1, 16, 14747, 3, 'Improved Inner Fire');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 9, 14522, 5, 'Unbreakable Will');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 10, 14748, 3, 'Improved Power Word: Shield');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 11, 14749, 2, 'Improved Power Word: Fortitude');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 12, 14751, 1, 'Inner Focus');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 13, 14521, 3, 'Meditation');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 14, 14774, 1, 'Martyrdom');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 15, 14520, 5, 'Mental Agility');
+INSERT INTO `playerbot_talent_build` VALUES (5, 1, 16, 14818, 1, 'Divine Spirit');
 
 -- shadow (暗牧), class 5 priest talent page 2: 51 points, primary tree Shadow
+-- The steps are the order in which a shadow priest spends its points from level 10 to 60: Spirit Tap and Improved
+-- Shadow Word: Pain through level 16, then the three early ranks of Shadow Focus, Mind Flay and Shadow Affinity,
+-- the fourth rank of Shadow Focus, Shadow Weaving and Vampiric Embrace, and Shadow Reach and the last rank of
+-- Shadow Focus before Darkness and Shadowform finish the tree. The 20 points in Discipline then go to Wand
+-- Specialization, Improved Power Word: Shield, Improved Power Word: Fortitude, Meditation, Inner Focus, Silent
+-- Resolve and Mental Agility.
 DELETE FROM `playerbot_talent_build` WHERE `class`=5 AND `talent_page`=2;
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 1, 15270, 4, 'Spirit Tap');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 2, 15268, 5, 'Blackout');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 3, 15275, 2, 'Improved Shadow Word: Pain');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 4, 15260, 5, 'Shadow Focus');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 5, 15273, 5, 'Improved Mind Blast');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 6, 15407, 1, 'Mind Flay');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 7, 17322, 3, 'Shadow Reach');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 8, 15257, 5, 'Shadow Weaving');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 9, 15473, 1, 'Shadowform');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 1, 15270, 5, 'Spirit Tap');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 2, 15275, 2, 'Improved Shadow Word: Pain');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 3, 15260, 3, 'Shadow Focus');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 4, 15407, 1, 'Mind Flay');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 5, 15318, 3, 'Shadow Affinity');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 6, 15260, 1, 'Shadow Focus');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 7, 15257, 5, 'Shadow Weaving');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 8, 15286, 1, 'Vampiric Embrace');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 9, 17322, 3, 'Shadow Reach');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 10, 15260, 1, 'Shadow Focus');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 11, 15259, 5, 'Darkness');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 12, 15473, 1, 'Shadowform');
 --   then 20 points of Discipline (talent page 0)
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 10, 14522, 5, 'Unbreakable Will');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 11, 14523, 5, 'Silent Resolve');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 12, 14748, 3, 'Improved Power Word: Shield');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 13, 14751, 1, 'Inner Focus');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 14, 14521, 3, 'Meditation');
-INSERT INTO `playerbot_talent_build` VALUES (5, 2, 15, 14747, 3, 'Improved Inner Fire');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 13, 14524, 5, 'Wand Specialization');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 14, 14748, 3, 'Improved Power Word: Shield');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 15, 14749, 2, 'Improved Power Word: Fortitude');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 16, 14521, 3, 'Meditation');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 17, 14751, 1, 'Inner Focus');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 18, 14523, 1, 'Silent Resolve');
+INSERT INTO `playerbot_talent_build` VALUES (5, 2, 19, 14520, 5, 'Mental Agility');
 
 -- elemental (元素萨), class 7 shaman talent page 0: 51 points, primary tree Elemental
 DELETE FROM `playerbot_talent_build` WHERE `class`=7 AND `talent_page`=0;

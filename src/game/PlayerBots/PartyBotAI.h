@@ -21,6 +21,8 @@
 #include "Group.h"
 #include "ObjectAccessor.h"
 
+#include <set>
+
 class Corpse;
 
 class PartyBotAI : public CombatBotBaseAI
@@ -63,10 +65,14 @@ public:
     Unit* SelectOnlyControlledHostileTarget() const;
     bool IsValidHostileTargetForAttack(Unit const* pTarget) const;
     bool HasMeleeAttackerInRange() const;
+    Unit* SelectNearestMeleeAttacker() const;
     bool IsMarkedForCrowdControl(Unit const* pTarget) const;
     uint8 CountNonRangedAttackersInRange(float range) const;
     uint8 CountUnmarkedEnemiesInRange(float range) const;
     bool CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const;
+    bool GroupAllMounted() const;
+    bool GroupHasFightingMemberMounted() const;
+    bool GroupHasFightingMemberOnFoot() const;
     bool GroupInCombat() const;
     bool DrinkAndEat();
     bool ShouldAutoRevive() const;
@@ -82,6 +88,19 @@ public:
     void CallPetBackAfterTheDrop();
     bool ShouldEnterStealth() const;
     bool EnterStealthIfNeeded(SpellEntry const* pStealthSpell);
+    bool IsManaUser(Player const* pPlayer) const;
+    Player* SelectMissingGroupBuffTarget(SpellEntry const* pSingleSpellEntry,
+        SpellEntry const* pGroupSpellEntry, bool manaUsersOnly, uint8& missingCount) const;
+    bool PriestFortitudeBuffDelayPassed();
+    bool PriestHasOutOfCombatBuffTarget();
+    bool PriestNeedsResurrectionOrDiseaseDispel();
+    bool IsTankRoleWarrior(Player* pPlayer) const;
+    bool IsTargetedByHostile() const;
+    Unit* SelectDispelTargetWithPet(SpellEntry const* pSpellEntry) const;
+    SpellEntry const* SelectPrayerOfHealing() const;
+    Player* SelectPrayerOfHealingTarget(uint8& memberCount) const;
+    bool GroupHealthAbove(float healthPercent) const;
+    Unit* SelectHostileDispelTarget(SpellEntry const* pSpellEntry) const;
 
     bool CheckForDispelTargets();
     void UpdateInCombatAI() final;
@@ -125,6 +144,11 @@ public:
     bool m_rogueVanishRetreat = false;
     ObjectGuid m_rogueStealthTargetGuid;
     float m_dropLandingZ = 0.0f;
+    std::set<ObjectGuid> m_priestFortitudeMembers;
+    bool m_priestFortitudeMembersInitialized = false;
+    uint64 m_priestFortitudeBuffReadyAt = 0;
+    uint64 m_shadowformDispelWaitUntil = 0;
+    bool m_priestMindBlastOpener = false;
 };
 
 #endif

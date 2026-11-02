@@ -111,6 +111,7 @@ document and the code in step - it is what the maintainer reads to tune the valu
    tables are some of the few places of this subsystem where item and spell ids are written in C++ - to tune the
    tiers means moving them into `sql/custom/repack/`, not keeping a second list. A bot does not learn the first aid
    skill: the core checks the `RequiredSkill` of an item when it loads the prototypes and never when the item is used.
+   A mounted bot neither eats, drinks, bandages, nor runs the out-of-combat spell routine; it has to dismount first.
 10. A bot rides the mount of its own race, or the mount of its class for a paladin and a warlock, and it calls the
    summon as a player calls it. The summons are the table `mountTiers` of `CombatBotBaseAI.cpp`: the ground mount of
    each race at the level its vendor teaches it, forty for the one of sixty per cent speed and sixty for the one of a
@@ -134,7 +135,8 @@ document and the code in step - it is what the maintainer reads to tune the valu
    so that the three seconds that a summon of these mounts takes show on the cast bar of the bot and the mount comes
    under the rules that stop a spell. A party does not ride on the mount of its leader: a bot of `PartyBotAI` gets on
    a mount while the leader is mounted and gets off when the leader gets off, and one that has nothing of its own to
-   ride stays on foot.
+   ride stays on foot. A mounted group is still travelling: a combat flag or an attacker on a mounted member does not
+   make its bots join, and only a group member who has dismounted and is fighting does.
 11. A party that goes down over a ledge goes down together, because the leader of a party is a player that jumps.
    `PartyBotAI::FollowLeaderDownTheDrop()` is for the bot that the pathfinder of the follow generator has stopped at
    the edge while its leader waits below it. The ledge is the height difference and the distance of
@@ -161,8 +163,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    A fear of the enemy is not counted, since a feared enemy is running away from the bot already. Without all of that
    the bot stands and takes the attacks and goes on with what its talent does. The chase generator keeps a distance
    for a ranged role all by itself, so `UpdateInCombatAI()` takes it back to `SetCasterChaseDistance(0.0f)` when the
-   enemy next to the bot is not held; that is what keeps a priest healing and a warlock casting instead of walking
-   backwards, and those two have no running of their own to change.
+   enemy next to the bot is not held; that is what keeps a healing priest and a warlock casting instead of walking
+   backwards. A shadow priest has the same eight-yard step as a mage when its attacker is held. Every healing talent
+   uses that step as well, and `PartyBotAI::SelectNearestMeleeAttacker()` finds the attacker even when the healer has no
+   offensive victim of its own.
    The distance of that kiting is `PB_RUN_AWAY_DISTANCE`, eight yards on every kind of ground. It is what
    `RunAwayFromTarget()` steps back by. After that step the mage's chase generator returns to the casting range of
    Frostbolt, or of Fireball when Frostbolt is not learned, so a distant target does not pull the mage back towards
@@ -177,24 +181,26 @@ document and the code in step - it is what the maintainer reads to tune the valu
    `PartyBotAI::GetChaseDistance()` remains the ordinary distance for chasing and casting: ten yards in a dungeon
    or raid, twenty in the open world and thirty in a battleground, the battleground asked for first because it is
    an instance too. A mage uses the maximum range of its learned Frostbolt, or Fireball when Frostbolt is absent,
-   including `SPELLMOD_RANGE` from talents; it does not chase while the target is inside that range. Other ranged
-   damage bots use thirty yards on every kind of ground instead, so they approach only when the target is outside the
-   range of their longest common attack spell and never walk closer for a short-range spell such as Fire Blast.
+   including `SPELLMOD_RANGE` from talents; it does not chase while the target is inside that range. A shadow priest
+   uses the modified range of its learned Mind Flay in the same way. Other ranged damage bots use thirty yards on
+   every kind of ground instead, so they approach only when the target is outside the range of their longest common
+   attack spell and never walk closer for a short-range spell such as Fire Blast.
    `CombatBotBaseAI::GetChaseDistance()` stays at twenty-five for a battle bot, which fights on the same ground in
    every battleground. A hunter swings the melee weapon that it wears
    instead of running - the auto attack of the core does the swinging, `UpdateAI` has taken the auto shot away from
    it below 8 yards, and its raptor strike and mongoose bite are in the `CanReachWithMeleeAutoAttack()` branch. The
-   three places that ask are the hunter, the mage, and the moonkin and `FORM_NONE` branch of a druid; that druid
-   casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape of a rogue
-   that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only below 30 per
-   cent health. On every update, in combat and out of it, a mage that is not mounted checks for Ice Barrier and casts
-   it when the buff is absent and the spell is usable. `AttackStart()` keeps a mage out of the melee attacking state,
-   so it never swings at an enemy that closes while it is between spells, but it enters combat explicitly when it
-   starts attacking, since a spell-only attack has no melee swing to do that later. On entering its class combat
-   routine, a mage interrupts the current cast of its target with Counterspell and casts Fire Blast whenever it is
-   ready in combat, but never against a frozen target. It otherwise uses Frostbolt; without Frostbolt it falls back to
-   Fireball, as it also does when the target is immune to Frostbolt. A non-elite target below two per cent health is
-   finished with the wand when Fire Blast is not available. At less than twenty per cent mana the mage casts
+   places that ask are the hunter, the mage, the shadow priest, and the moonkin and `FORM_NONE` branch of a druid;
+   that druid casts Entangling Roots first, which is the right answer for an enemy that is not held yet. The escape
+   of a rogue that has vanished at low health is not kiting and is not part of this. A mage casts Mana Shield only
+   below 30 per cent health. On every update, in combat and out of it, a mage that is not mounted checks for Ice
+   Barrier and casts it when the buff is absent and the spell is usable. `AttackStart()` keeps a mage out of the
+   melee attacking state, so it never swings at an enemy that closes while it is between spells, but it enters
+   combat explicitly when it starts attacking, since a spell-only attack has no melee swing to do that later. On
+   entering its class combat routine, a mage interrupts the current cast of its target with Counterspell and casts
+   Fire Blast whenever it is ready in combat, but never against a frozen target. It otherwise uses Frostbolt; without
+   Frostbolt it falls back to Fireball, as it also does when the target is immune to Frostbolt. A non-elite target
+   below two per cent health is finished with the wand when Fire Blast is not available. At less than twenty per cent
+   mana the mage casts
    Evocation whenever no attacker can reach it with a melee attack. Cone of Cold is used under the same multi-target
    condition as Arcane Explosion. The movement slow that Frostbolt leaves on the target does not hold the next
    Frostbolt back: a bot skips a spell for its existing aura only when that aura is not the by-product of a direct
@@ -228,6 +234,25 @@ document and the code in step - it is what the maintainer reads to tune the valu
     within fifty yards is in combat and held by such an effect, the bot instead selects that unit and attacks it,
     which may break the control. A second hostile unit in range returns target selection to the ordinary rule, so a
     bot does not break a sheep or a blind while there is another target to use.
+
+15. A mage casts Arcane Intellect on itself and the mana users of its group outside an instance. In an instance with
+    Arcane Brilliance, a group below five receives no Intellect buff, a full group with two or more mana users missing
+    the buff receives Arcane Brilliance, and a full group with fewer missing receives Arcane Intellect. A priest waits
+    thirty seconds after the last new member joins before it chooses Prayer of Fortitude for three or more members
+    without Stamina and Power Word: Fortitude for fewer; it activates Inner Focus before Prayer of Fortitude. Divine
+    Spirit is for mana users outside an instance, while Prayer of Spirit is used inside only for a full group with
+    three or more mana users missing Spirit. Priests do not cast Shadow Protection.
+
+16. A shadow priest opens with Mind Blast, keeps Shadow Word: Pain and Vampiric Embrace on its target, combines Inner
+    Focus with Mind Blast, and uses Mind Flay as its filler before falling back to Mind Blast and the wand. It never
+    casts Psychic Scream or Mana Burn. It dispels hostile buffs and dispels magic from the party. Outside combat a
+    non-healing Shadowform priest waits twenty seconds when a resurrection or disease removal is needed, then breaks
+    the form if the need remains; a shadow priest in combat removes only magic. A healing priest never enters
+    Shadowform, leaves an existing one before acting, dispels magic and disease from the party and their pets, and
+    casts Fade as soon as a hostile unit has it as a target. Three injured party members below seventy per cent
+    health within thirty yards call for Prayer of Healing. When every group member is at least ninety per cent health
+    and no buff, heal or dispel is due, the healer shoots the target that the group is attacking with its wand. It does
+    not shield a tank-role warrior above sixty per cent health.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
