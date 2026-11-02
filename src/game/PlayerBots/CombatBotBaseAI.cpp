@@ -2127,13 +2127,14 @@ bool CombatBotBaseAI::IsValidHostileTarget(Unit const* pTarget) const
 
 namespace
 {
-    // Some movement slows are marked as positive by the spell classification used for their holder. A negative
-    // speed modifier is still a debuff that a friendly dispel should remove.
-    bool HasNegativeMovementSpeedAura(SpellAuraHolder const* holder)
+    // Movement slows are common and often have a small effect. They are identified by the actual modifier rather than
+    // the holder's positive flag, because some spells carrying them are classified as positive.
+    bool HasOnlyNegativeMovementSpeedAura(SpellAuraHolder const* holder)
     {
         if (!holder)
             return false;
 
+        bool hasMovementSlow = false;
         for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
         {
             Aura const* aura = holder->GetAuraByEffectIndex(SpellEffectIndex(i));
@@ -2142,10 +2143,17 @@ namespace
 
             Modifier const* modifier = aura->GetModifier();
             if (modifier->m_auraname == SPELL_AURA_MOD_DECREASE_SPEED && modifier->m_amount < 0.0f)
-                return true;
+            {
+                hasMovementSlow = true;
+                continue;
+            }
+
+            // A holder with another negative effect is worth a dispel even when it also slows movement.
+            if (!aura->IsPositive())
+                return false;
         }
 
-        return false;
+        return hasMovementSlow;
     }
 }
 
@@ -2183,7 +2191,12 @@ bool CombatBotBaseAI::IsValidDispelTarget(Unit const* pTarget, SpellEntry const*
                     holder->GetSpellProto()->Dispel == DISPEL_DISEASE ||
                     holder->GetSpellProto()->Dispel == DISPEL_POISON)
                 {
-                    bool positive = holder->IsPositive() && !HasNegativeMovementSpeedAura(holder);
+                    // A dispel costs mana and a global cooldown. A frequent movement slow is not worth spending them
+                    // on when the group can usually walk it off, so a friendly dispel never selects one.
+                    if (friendly_dispel && HasOnlyNegativeMovementSpeedAura(holder))
+                        continue;
+
+                    bool positive = holder->IsPositive();
                     // do not remove positive auras if friendly target
                     // do not remove negative auras if non-friendly target
                     // when removing charm auras ignore hostile reaction from the charm

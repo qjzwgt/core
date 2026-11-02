@@ -252,13 +252,14 @@ document and the code in step - it is what the maintainer reads to tune the valu
     non-healing Shadowform priest waits twenty seconds when a resurrection or disease removal is needed, then breaks
     the form if the need remains; a shadow priest in combat removes only magic. A healing priest never enters
    Shadowform, leaves an existing one before acting, dispels magic and disease from the party and their pets. A
-   negative movement-speed aura is treated as a debuff for a friendly dispel even when the core marks its holder as
-   positive. A priest of either role casts Fade as soon as a hostile unit has it as a target, at any distance. Three
-   injured party members below seventy per cent health within thirty yards call for Prayer of Healing. When every
-   group member is at least ninety per cent health and no buff, heal or dispel is due, the healer shoots a target
-   that is already in combat with its wand; it never starts a fight with the wand. It does not shield a tank-role
-   warrior above sixty per cent health. A shadow priest does not start the wand during the global cooldown left by a
-   DoT, and an active wand gives way as soon as Mind Flay is ready and the target is in its range.
+   friendly dispel does not select a holder whose only negative effect is a movement-speed reduction, even when its
+   dispel type matches: it is frequent and small enough that group members can walk it off, so it is not worth the
+   mana and global cooldown. A priest of either role casts Fade as soon as a hostile unit has it as a target, at any
+   distance. Three injured party members below seventy per cent health within thirty yards call for Prayer of
+   Healing. When every group member is at least ninety per cent health and no buff, heal or dispel is due, the healer
+   shoots a target that is already in combat with its wand; it never starts a fight with the wand. It does not shield
+   a tank-role warrior above sixty per cent health. A shadow priest does not start the wand during the global cooldown
+   left by a DoT, and an active wand gives way as soon as Mind Flay is ready and the target is in its range.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
