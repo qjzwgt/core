@@ -266,7 +266,8 @@ document and the code in step - it is what the maintainer reads to tune the valu
     optional opening only when it is learned, ready, affordable and usable outside a dungeon; if it cannot open the
     fight, the tank still follows the target to melee in Defensive Stance. The same stance is its out-of-combat
     default, and the protection routine switches back to it before Revenge, Shield Block, Shield Slam and Sunder
-    Armor.
+    Armor. A stance cast that the ordinary bot cast gate rejects uses the same spell through the triggered server path,
+    with the global cooldown put back, so a bot cannot remain locked in Battle Stance after Charge.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

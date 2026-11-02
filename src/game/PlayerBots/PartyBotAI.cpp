@@ -22,6 +22,7 @@
 #include "ObjectMgr.h"
 #include "PlayerBotMgr.h"
 #include "Opcodes.h"
+#include "Log.h"
 #include "World.h"
 #include "WorldPacket.h"
 #include "Spell.h"
@@ -1185,11 +1186,37 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
     if (!pStance ||
         !me->IsSpellReady(pStance) ||
         me->HasGCD(pStance) ||
-        me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(pStance, me) ||
-        pStance->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK)
+        me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(pStance, me))
         return false;
 
-    return DoCastSpell(me, pStance) == SPELL_CAST_OK;
+    ShapeshiftForm stanceForm = FORM_NONE;
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (pStance->EffectApplyAuraName[i] == SPELL_AURA_MOD_SHAPESHIFT)
+        {
+            stanceForm = ShapeshiftForm(pStance->EffectMiscValue[i]);
+            break;
+        }
+    }
+
+    if (stanceForm == FORM_NONE || stanceForm == me->GetShapeshiftForm())
+        return true;
+
+    SpellCastResult const result = DoCastSpell(me, pStance);
+    if (result == SPELL_CAST_OK || me->GetShapeshiftForm() == stanceForm)
+        return true;
+
+    // A bot can issue a stance change between its previous action and the next melee swing, where the ordinary cast
+    // checks may still reject it as a spell in progress or a global cooldown. The triggered path applies the same
+    // shapeshift aura that a player cast would apply; the GCD is still put back so the stance is not free.
+    SpellCastResult const triggeredResult = me->CastSpell(me, pStance, true);
+    me->AddGCD(pStance);
+    if (me->GetShapeshiftForm() == stanceForm)
+        return true;
+
+    sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Party bot %s failed to switch to stance %u: normal %u, triggered %u",
+        me->GetName(), pStance->Id, uint32(result), uint32(triggeredResult));
+    return false;
 }
 
 // The ordinary spell gate refuses a second aura-only cast while the target still
@@ -4020,11 +4047,9 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
     ShapeshiftForm const desiredForm = protectionTank ?
         FORM_DEFENSIVESTANCE : FORM_BATTLESTANCE;
 
-    if (pStance &&
-        me->GetShapeshiftForm() != desiredForm &&
-        CanTryToCastSpell(me, pStance))
+    if (pStance && me->GetShapeshiftForm() != desiredForm)
     {
-        if (DoCastSpell(me, pStance) == SPELL_CAST_OK)
+        if (TrySwitchWarriorStance(pStance))
             return;
     }
 
@@ -4110,15 +4135,15 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         if (me->GetShapeshiftForm() != FORM_BATTLESTANCE &&
             m_spells.warrior.pBattleStance)
         {
-            TrySwitchWarriorStance(m_spells.warrior.pBattleStance);
-            return;
+            if (TrySwitchWarriorStance(m_spells.warrior.pBattleStance))
+                return;
         }
     }
     else if (me->GetShapeshiftForm() != FORM_DEFENSIVESTANCE &&
              m_spells.warrior.pDefensiveStance)
     {
-        TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance);
-        return;
+        if (TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance))
+            return;
     }
 
     // The Thunder Clap rule is a trigger, not an idle fallback: Shield Slam or
