@@ -31,6 +31,7 @@
 #include "Corpse.h"
 #include "PathFinder.h"
 
+#include <algorithm>
 #include <ctime>
 #include <random>
 
@@ -46,6 +47,7 @@ enum PartyBotSpells
 #define PB_MAX_FOLLOW_DIST 6.0f
 #define PB_MIN_FOLLOW_ANGLE 0.0f
 #define PB_MAX_FOLLOW_ANGLE 6.0f
+#define PB_RAGE_PER_POINT 10
 
 // What is taken for a ledge that a player jumps down instead of walking around: the leader stands that much lower
 // than the bot and that close by, and the pathfinder of the follow generator has no way down to offer. The ground
@@ -747,6 +749,9 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
     if (me->IsMounted())
         me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
+    if (me->GetClass() == CLASS_WARRIOR && TryChargeWarriorTarget(pVictim))
+        return true;
+
     if (PrepareStealthOpener())
         return true;
 
@@ -1029,6 +1034,312 @@ bool PartyBotAI::IsTankRoleWarrior(Player* pPlayer) const
 
     CombatBotBaseAI* pAI = dynamic_cast<CombatBotBaseAI*>(pPlayer->AI());
     return pAI && pAI->GetRole() == ROLE_TANK;
+}
+
+bool PartyBotAI::IsProtectionWarriorTank() const
+{
+    return me->GetClass() == CLASS_WARRIOR &&
+        m_role == ROLE_TANK &&
+        IsWearingShield(me);
+}
+
+bool PartyBotAI::IsOtherPartyMember(Unit const* pTarget) const
+{
+    if (!pTarget || pTarget == me || !pTarget->IsPlayer())
+        return false;
+
+    Group* pGroup = me->GetGroup();
+    return pGroup && pGroup->IsMember(pTarget->GetObjectGuid());
+}
+
+// A warrior opens a fight with Charge. A bot has no keyboard to keep the target at the
+// outside edge of the charge range, so the chase generator stops at the maximum range
+// and the spell is cast as soon as the target enters it.
+bool PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
+{
+    if (!pTarget || !m_spells.warrior.pCharge || me->IsInCombat())
+        return false;
+
+    Map* pMap = me->GetMap();
+    if (!pMap || pMap->IsDungeon())
+        return false;
+
+    SpellEntry const* pCharge = m_spells.warrior.pCharge;
+    uint32 const rageCost = Spell::CalculatePowerCost(pCharge, me);
+    if (!me->IsSpellReady(pCharge) ||
+        me->HasGCD(pCharge) ||
+        me->GetPower(POWER_RAGE) < rageCost ||
+        pCharge->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK ||
+        pTarget->IsImmuneToSpell(pCharge, false) ||
+        !me->IsWithinLOSInMap(pTarget))
+    {
+        m_warriorChargeTargetGuid.Clear();
+        me->SetCasterChaseDistance(0.0f);
+        return false;
+    }
+
+    float const chargeRange = GetSpellMaxRangeForBot(pCharge);
+    if (me->GetCombatDistance(pTarget) > chargeRange)
+    {
+        m_warriorChargeTargetGuid = pTarget->GetObjectGuid();
+        me->SetTargetGuid(m_warriorChargeTargetGuid);
+        me->SetCasterChaseDistance(std::max(chargeRange - 1.0f, 1.0f));
+        me->GetMotionMaster()->MoveChase(pTarget, 1.0f, 0.0f);
+        return true;
+    }
+
+    me->SetCasterChaseDistance(0.0f);
+    if (!IsTargetInSpellRange(pTarget, pCharge) ||
+        !CanTryToCastSpell(pTarget, pCharge))
+    {
+        m_warriorChargeTargetGuid.Clear();
+        return false;
+    }
+
+    m_warriorChargeTargetGuid.Clear();
+    return DoCastSpell(pTarget, pCharge) == SPELL_CAST_OK;
+}
+
+bool PartyBotAI::TryContinueWarriorCharge()
+{
+    if (m_warriorChargeTargetGuid.IsEmpty())
+        return false;
+
+    Unit* pTarget = me->GetMap()->GetUnit(m_warriorChargeTargetGuid);
+    if (!pTarget || !IsValidHostileTarget(pTarget) || me->IsInCombat())
+    {
+        m_warriorChargeTargetGuid.Clear();
+        me->SetCasterChaseDistance(0.0f);
+        return false;
+    }
+
+    if (TryChargeWarriorTarget(pTarget))
+        return true;
+
+    m_warriorChargeTargetGuid.Clear();
+    return false;
+}
+
+uint32 PartyBotAI::GetTacticalMasteryRank() const
+{
+    if (!m_spells.warrior.pTacticalMastery)
+        return 0;
+
+    TalentSpellPos const* pTalentPos = GetTalentSpellPos(m_spells.warrior.pTacticalMastery->Id);
+    return pTalentPos ? uint32(pTalentPos->rank) + 1 : 0;
+}
+
+bool PartyBotAI::HasThunderClapDebuff(Unit const* pTarget) const
+{
+    if (!pTarget)
+        return false;
+
+    for (Aura* pAura : pTarget->GetAurasByType(SPELL_AURA_MOD_MELEE_HASTE))
+    {
+        if (pAura &&
+            pAura->GetSpellProto()->IsFitToFamily<SPELLFAMILY_WARRIOR, CF_WARRIOR_THUNDER_CLAP>())
+            return true;
+    }
+
+    return false;
+}
+
+bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
+{
+    if (!pStance || !CanTryToCastSpell(me, pStance))
+        return false;
+
+    return DoCastSpell(me, pStance) == SPELL_CAST_OK;
+}
+
+// The ordinary spell gate refuses a second aura-only cast while the target still
+// carries it. A forced Sunder is an instruction to spend one cast on this target,
+// which is also how the next stack is added, so that gate is skipped for this one.
+bool PartyBotAI::TryCastForcedWarriorSunder(Unit* pTarget)
+{
+    SpellEntry const* pSunder = m_spells.warrior.pSunderArmor;
+    if (!pTarget ||
+        !pSunder ||
+        !me->IsSpellReady(pSunder) ||
+        me->HasGCD(pSunder) ||
+        me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(pSunder, me) ||
+        pSunder->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK ||
+        pTarget->IsImmuneToSpell(pSunder, false) ||
+        !IsTargetInSpellRange(pTarget, pSunder) ||
+        !me->IsWithinLOSInMap(pTarget))
+        return false;
+
+    if (DoCastSpell(pTarget, pSunder) != SPELL_CAST_OK)
+        return false;
+
+    if (m_warriorSecondaryTargetGuid == pTarget->GetObjectGuid())
+        m_warriorSecondarySundered = true;
+    return true;
+}
+
+Unit* PartyBotAI::SelectProtectionWarriorSecondaryTarget(Unit const* pPrimaryTarget) const
+{
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember || pMember == me)
+            continue;
+
+        for (Unit* pAttacker : pMember->GetAttackers())
+        {
+            if (pAttacker &&
+                pAttacker != pPrimaryTarget &&
+                pAttacker->GetVictim() == pMember &&
+                IsValidHostileTarget(pAttacker) &&
+                me->IsWithinDist(pAttacker, 50.0f))
+                return pAttacker;
+        }
+    }
+
+    return nullptr;
+}
+
+bool PartyBotAI::TryTauntProtectionWarriorTarget(Unit* pTarget)
+{
+    if (!pTarget || !IsOtherPartyMember(pTarget->GetVictim()))
+        return false;
+
+    if (m_spells.warrior.pTaunt && CanTryToCastSpell(pTarget, m_spells.warrior.pTaunt))
+    {
+        if (DoCastSpell(pTarget, m_spells.warrior.pTaunt) == SPELL_CAST_OK)
+            return true;
+    }
+
+    // Taunt being ready but out of range is not the cooldown case: the ordinary
+    // chase takes the bot into range, where the next update casts Taunt.
+    if (m_spells.warrior.pTaunt && me->IsSpellReady(m_spells.warrior.pTaunt))
+        return false;
+
+    bool const canMock = me->GetPower(POWER_RAGE) > 10 * PB_RAGE_PER_POINT &&
+        m_spells.warrior.pMockingBlow &&
+        me->IsSpellReady(m_spells.warrior.pMockingBlow);
+    if (canMock)
+    {
+        if (!me->CanReachWithMeleeAutoAttack(pTarget))
+        {
+            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
+                BeginChasing(pTarget);
+            return true;
+        }
+
+        if (me->GetShapeshiftForm() == FORM_BATTLESTANCE)
+        {
+            if (CanTryToCastSpell(pTarget, m_spells.warrior.pMockingBlow) &&
+                DoCastSpell(pTarget, m_spells.warrior.pMockingBlow) == SPELL_CAST_OK)
+                return true;
+        }
+        else if (GetTacticalMasteryRank() >= 2 &&
+                 TrySwitchWarriorStance(m_spells.warrior.pBattleStance))
+            return true;
+    }
+
+    if (me->GetShapeshiftForm() != FORM_DEFENSIVESTANCE &&
+        TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance))
+        return true;
+
+    return false;
+}
+
+bool PartyBotAI::UpdateProtectionWarriorTankTarget()
+{
+    Unit* pCurrentTarget = me->GetVictim();
+
+    Unit* pSecondaryTarget = m_warriorSecondaryTargetGuid.IsEmpty() ? nullptr :
+        me->GetMap()->GetUnit(m_warriorSecondaryTargetGuid);
+    if (pSecondaryTarget && !IsValidHostileTarget(pSecondaryTarget))
+        pSecondaryTarget = nullptr;
+
+    if (!pSecondaryTarget && !m_warriorSecondaryTargetGuid.IsEmpty())
+    {
+        m_warriorSecondaryTargetGuid.Clear();
+        m_warriorSecondarySundered = false;
+    }
+
+    if (pSecondaryTarget)
+    {
+        if (m_warriorSecondarySundered)
+        {
+            m_warriorSecondaryTargetGuid.Clear();
+            m_warriorSecondarySundered = false;
+
+            Unit* pPrimaryTarget = m_warriorPrimaryTargetGuid.IsEmpty() ? nullptr :
+                me->GetMap()->GetUnit(m_warriorPrimaryTargetGuid);
+            if (pPrimaryTarget && IsValidHostileTarget(pPrimaryTarget))
+            {
+                if (pCurrentTarget && pCurrentTarget != pPrimaryTarget)
+                    me->AttackStop(true);
+                AttackStart(pPrimaryTarget);
+                return false;
+            }
+
+            m_warriorPrimaryTargetGuid.Clear();
+        }
+        else
+        {
+            if (pCurrentTarget != pSecondaryTarget)
+            {
+                if (pCurrentTarget)
+                    me->AttackStop(true);
+                AttackStart(pSecondaryTarget);
+            }
+
+            return TryTauntProtectionWarriorTarget(pSecondaryTarget);
+        }
+    }
+
+    pCurrentTarget = me->GetVictim();
+    Unit* pPrimaryTarget = m_warriorPrimaryTargetGuid.IsEmpty() ? nullptr :
+        me->GetMap()->GetUnit(m_warriorPrimaryTargetGuid);
+    if (pPrimaryTarget && !IsValidHostileTarget(pPrimaryTarget))
+        pPrimaryTarget = nullptr;
+
+    if (!pPrimaryTarget)
+    {
+        m_warriorPrimaryTargetGuid.Clear();
+
+        if (!pCurrentTarget || !IsValidHostileTarget(pCurrentTarget))
+            return false;
+
+        pPrimaryTarget = pCurrentTarget;
+        m_warriorPrimaryTargetGuid = pPrimaryTarget->GetObjectGuid();
+    }
+    else if (pCurrentTarget != pPrimaryTarget)
+    {
+        if (pCurrentTarget)
+            me->AttackStop(true);
+        if (!AttackStart(pPrimaryTarget))
+            return false;
+        pCurrentTarget = pPrimaryTarget;
+    }
+
+    // The current primary target is still the tank's responsibility. Handle its
+    // threat before looking at another mob that has pulled one of the party.
+    if (IsOtherPartyMember(pPrimaryTarget->GetVictim()))
+        return TryTauntProtectionWarriorTarget(pPrimaryTarget);
+
+    Unit* pNextSecondaryTarget = SelectProtectionWarriorSecondaryTarget(pPrimaryTarget);
+    if (!pNextSecondaryTarget)
+        return false;
+
+    m_warriorSecondaryTargetGuid = pNextSecondaryTarget->GetObjectGuid();
+    m_warriorSecondarySundered = false;
+    if (pCurrentTarget != pNextSecondaryTarget)
+    {
+        if (pCurrentTarget)
+            me->AttackStop(true);
+        AttackStart(pNextSecondaryTarget);
+    }
+
+    return TryTauntProtectionWarriorTarget(pNextSecondaryTarget);
 }
 
 bool PartyBotAI::IsTargetedByHostile() const
@@ -1625,6 +1936,9 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     if (me->IsNonMeleeSpellCasted(false, false, true))
         return;
 
+    if (me->GetClass() == CLASS_WARRIOR && TryContinueWarriorCharge())
+        return;
+
     if (EnsureMageIceBarrier())
         return;
 
@@ -1884,7 +2198,12 @@ void PartyBotAI::UpdateInCombatAI()
 
     if (!IsInDuel())
     {
-        if (m_role == ROLE_TANK)
+        if (IsProtectionWarriorTank())
+        {
+            if (UpdateProtectionWarriorTankTarget())
+                return;
+        }
+        else if (m_role == ROLE_TANK)
         {
             Unit* pVictim = me->GetVictim();
 
@@ -3638,6 +3957,10 @@ void PartyBotAI::UpdateInCombatAI_Warlock()
 
 void PartyBotAI::UpdateOutOfCombatAI_Warrior()
 {
+    m_warriorPrimaryTargetGuid.Clear();
+    m_warriorSecondaryTargetGuid.Clear();
+    m_warriorSecondarySundered = false;
+
     if (m_spells.warrior.pBattleStance &&
         CanTryToCastSpell(me, m_spells.warrior.pBattleStance))
     {
@@ -3668,8 +3991,124 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
     }
 }
 
+void PartyBotAI::UpdateProtectionWarriorTankCombat()
+{
+    Unit* pVictim = me->GetVictim();
+    if (!pVictim)
+    {
+        if (m_spells.warrior.pBattleShout &&
+            CanTryToCastSpell(me, m_spells.warrior.pBattleShout))
+            DoCastSpell(me, m_spells.warrior.pBattleShout);
+        return;
+    }
+
+    // Bloodrage is the rage source of the shield tank. It is used before a stance
+    // or attack when no rotation skill is affordable, so the bot does not idle
+    // until its next white swing.
+    if (me->GetPower(POWER_RAGE) < 10 * PB_RAGE_PER_POINT &&
+        m_spells.warrior.pBloodrage &&
+        CanTryToCastSpell(me, m_spells.warrior.pBloodrage))
+    {
+        if (DoCastSpell(me, m_spells.warrior.pBloodrage) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (pVictim->IsNonMeleeSpellCasted(false, false, true) &&
+        m_spells.warrior.pShieldBash &&
+        IsWearingShield(me) &&
+        CanTryToCastSpell(pVictim, m_spells.warrior.pShieldBash))
+    {
+        if (DoCastSpell(pVictim, m_spells.warrior.pShieldBash) == SPELL_CAST_OK)
+            return;
+    }
+
+    bool const needThunderClap =
+        GetEnemyCountInRadiusAround(pVictim, 10.0f) > 2 &&
+        !HasThunderClapDebuff(pVictim) &&
+        me->GetPower(POWER_RAGE) > 20 * PB_RAGE_PER_POINT &&
+        m_spells.warrior.pThunderClap &&
+        me->IsSpellReady(m_spells.warrior.pThunderClap) &&
+        !pVictim->IsImmuneToSpell(m_spells.warrior.pThunderClap, false);
+
+    // Thunder Clap is done in Battle Stance when Tactical Mastery keeps enough
+    // rage to make the extra switch worthwhile. Every ordinary skill stays in
+    // Defensive Stance.
+    bool const needBattleStance =
+        needThunderClap &&
+        (me->GetShapeshiftForm() == FORM_BATTLESTANCE ||
+         GetTacticalMasteryRank() >= 4);
+
+    if (needBattleStance)
+    {
+        if (me->GetShapeshiftForm() != FORM_BATTLESTANCE &&
+            TrySwitchWarriorStance(m_spells.warrior.pBattleStance))
+            return;
+    }
+    else if (me->GetShapeshiftForm() != FORM_DEFENSIVESTANCE &&
+             TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance))
+        return;
+
+    // The Thunder Clap rule is a trigger, not an idle fallback: Shield Slam or
+    // Sunder Armor would otherwise spend the rage that the rule asked to keep for
+    // the stance switch and the Thunder Clap itself.
+    if (needThunderClap &&
+        me->GetShapeshiftForm() == FORM_BATTLESTANCE &&
+        CanTryToCastSpell(pVictim, m_spells.warrior.pThunderClap))
+    {
+        if (DoCastSpell(pVictim, m_spells.warrior.pThunderClap) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (m_spells.warrior.pRevenge &&
+        CanTryToCastSpell(pVictim, m_spells.warrior.pRevenge))
+    {
+        if (DoCastSpell(pVictim, m_spells.warrior.pRevenge) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (!me->GetAttackers().empty() &&
+        m_spells.warrior.pShieldBlock &&
+        CanTryToCastSpell(me, m_spells.warrior.pShieldBlock))
+    {
+        if (DoCastSpell(me, m_spells.warrior.pShieldBlock) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (m_spells.warrior.pShieldSlam &&
+        CanTryToCastSpell(pVictim, m_spells.warrior.pShieldSlam))
+    {
+        if (DoCastSpell(pVictim, m_spells.warrior.pShieldSlam) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (m_spells.warrior.pSunderArmor &&
+        me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(m_spells.warrior.pSunderArmor, me) &&
+        m_spells.warrior.pBloodrage &&
+        CanTryToCastSpell(me, m_spells.warrior.pBloodrage))
+    {
+        if (DoCastSpell(me, m_spells.warrior.pBloodrage) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (TryCastForcedWarriorSunder(pVictim))
+        return;
+
+    MovementGeneratorType const movementType =
+        me->GetMotionMaster()->GetCurrentMovementGeneratorType();
+    if (!me->CanReachWithMeleeAutoAttack(pVictim) &&
+        (movementType == IDLE_MOTION_TYPE ||
+         movementType == FOLLOW_MOTION_TYPE))
+        BeginChasing(pVictim);
+}
+
 void PartyBotAI::UpdateInCombatAI_Warrior()
 {
+    if (IsProtectionWarriorTank())
+    {
+        UpdateProtectionWarriorTankCombat();
+        return;
+    }
+
     if (Unit* pVictim = me->GetVictim())
     {
         if (pVictim->IsNonMeleeSpellCasted(false, false, true))

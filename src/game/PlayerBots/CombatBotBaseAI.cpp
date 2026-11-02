@@ -218,6 +218,16 @@ void CombatBotBaseAI::PopulateSpellData()
         if (!pSpellEntry)
             continue;
 
+        // Tactical Mastery is a passive talent, but its rank decides which stance the
+        // shield tank may leave for Mocking Blow and Thunder Clap.
+        if (me->GetClass() == CLASS_WARRIOR &&
+            pSpellEntry->SpellName[0] == "Tactical Mastery" &&
+            (!m_spells.warrior.pTacticalMastery ||
+             pSpellEntry->GetRank() > m_spells.warrior.pTacticalMastery->GetRank() ||
+             (pSpellEntry->GetRank() == m_spells.warrior.pTacticalMastery->GetRank() &&
+              pSpellEntry->Id > m_spells.warrior.pTacticalMastery->Id)))
+            m_spells.warrior.pTacticalMastery = pSpellEntry;
+
         if (pSpellEntry->HasAttribute(SPELL_ATTR_PASSIVE))
             continue;
 
@@ -1069,6 +1079,11 @@ void CombatBotBaseAI::PopulateSpellData()
                     if (IsHigherRankSpell(m_spells.warrior.pCharge))
                         m_spells.warrior.pCharge = pSpellEntry;
                 }
+                else if (pSpellEntry->SpellName[0] == "Taunt")
+                {
+                    if (IsHigherRankSpell(m_spells.warrior.pTaunt))
+                        m_spells.warrior.pTaunt = pSpellEntry;
+                }
                 else if (pSpellEntry->SpellName[0].find("Intercept") != std::string::npos)
                 {
                     if (IsHigherRankSpell(m_spells.warrior.pIntercept))
@@ -1093,6 +1108,11 @@ void CombatBotBaseAI::PopulateSpellData()
                 {
                     if (IsHigherRankSpell(m_spells.warrior.pExecute))
                         m_spells.warrior.pExecute = pSpellEntry;
+                }
+                else if (pSpellEntry->SpellName[0] == "Revenge")
+                {
+                    if (IsHigherRankSpell(m_spells.warrior.pRevenge))
+                        m_spells.warrior.pRevenge = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Mortal Strike") != std::string::npos)
                 {
@@ -1213,6 +1233,11 @@ void CombatBotBaseAI::PopulateSpellData()
                 {
                     if (IsHigherRankSpell(m_spells.warrior.pConcussionBlow))
                         m_spells.warrior.pConcussionBlow = pSpellEntry;
+                }
+                else if (pSpellEntry->SpellName[0] == "Mocking Blow")
+                {
+                    if (IsHigherRankSpell(m_spells.warrior.pMockingBlow))
+                        m_spells.warrior.pMockingBlow = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Piercing Howl") != std::string::npos)
                 {

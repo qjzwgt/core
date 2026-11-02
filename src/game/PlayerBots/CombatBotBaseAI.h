@@ -479,11 +479,13 @@ public:
             SpellEntry const* pBerserkerStance;
             SpellEntry const* pDefensiveStance;
             SpellEntry const* pCharge;
+            SpellEntry const* pTaunt;
             SpellEntry const* pIntercept;
             SpellEntry const* pOverpower;
             SpellEntry const* pHeroicStrike;
             SpellEntry const* pCleave;
             SpellEntry const* pExecute;
+            SpellEntry const* pRevenge;
             SpellEntry const* pMortalStrike;
             SpellEntry const* pBloodthirst;
             SpellEntry const* pBloodrage;
@@ -508,6 +510,8 @@ public:
             SpellEntry const* pShieldSlam;
             SpellEntry const* pSunderArmor;
             SpellEntry const* pConcussionBlow;
+            SpellEntry const* pMockingBlow;
+            SpellEntry const* pTacticalMastery;
             SpellEntry const* pPiercingHowl;
         } warrior;
         struct
