@@ -34,4 +34,12 @@ std::vector<BotTalentBuildStep> const* GetBotTalentBuild(uint8 botClass, uint8 t
 // from the first rank, so the ranks that are known have to be counted out before the build is walked again.
 uint32 GetLearnedTalentRanks(Player const* me, uint32 talentId);
 
+// The talent page whose build `me` has learned, false when none of the builds of its class is matched. A step of
+// a build counts when the player knows the ranks that that step and the steps before it ask for the same talent,
+// and the page with the most steps matched says the build that the player was given - which is how the talent of
+// a bot is known again after it comes back from the database, where neither the asked talent nor the role of the
+// bot is stored. A character that was not built from one of these builds - a player that a bot was cloned
+// from - matches no page, and neither does a bot with too few points spent to tell one build from another.
+bool GetLearnedTalentBuildPage(Player const* me, uint8& tabpage);
+
 #endif

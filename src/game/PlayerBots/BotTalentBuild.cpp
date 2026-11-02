@@ -164,3 +164,49 @@ uint32 GetLearnedTalentRanks(Player const* me, uint32 talentId)
 
     return learned;
 }
+
+bool GetLearnedTalentBuildPage(Player const* me, uint8& tabpage)
+{
+    if (!me)
+        return false;
+
+    uint8 bestPage = MAX_GEAR_SPEC_TABS;
+    uint32 bestSteps = 0;
+
+    for (uint8 page = 0; page < MAX_GEAR_SPEC_TABS; ++page)
+    {
+        std::vector<BotTalentBuildStep> const* pBuild = GetBotTalentBuild(me->GetClass(), page);
+        if (!pBuild || pBuild->empty())
+            continue;
+
+        // The ranks that the steps of a build ask for, added up per talent as the build is walked: a step is
+        // complete when the player knows that many ranks of its talent. Every step is asked, and not only as far
+        // as the first one that is missing, because CombatBotBaseAI::LearnTalentsFromBuild takes a step that was
+        // still locked when it came after the steps that follow it, as a player who finds a talent locked comes
+        // back to it later.
+        std::map<uint32, uint32> askedRanks;
+        uint32 completed = 0;
+        for (BotTalentBuildStep const& step : *pBuild)
+        {
+            askedRanks[step.talentId] += step.ranks;
+            if (GetLearnedTalentRanks(me, step.talentId) >= askedRanks[step.talentId])
+                ++completed;
+        }
+
+        if (completed > bestSteps)
+        {
+            bestSteps = completed;
+            bestPage = page;
+        }
+    }
+
+    // One completed step does not tell one build of a class from another: the first steps of several builds are
+    // the same talent, asked for a different number of ranks. A page is answered only when its steps are the most
+    // matched, so a character with points in more than one tree is not named by a couple of the talents that two
+    // of the builds of its class have in common.
+    if (bestSteps < 2)
+        return false;
+
+    tabpage = bestPage;
+    return true;
+}

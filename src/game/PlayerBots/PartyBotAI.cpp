@@ -1061,9 +1061,12 @@ bool PartyBotAI::IsTankRoleWarrior(Player* pPlayer) const
 
 bool PartyBotAI::IsProtectionWarriorTank() const
 {
-    return me->GetClass() == CLASS_WARRIOR &&
-        m_role == ROLE_TANK &&
-        IsWearingShield(me);
+    // A warrior of the party that wears a shield is the shield tank of that party whatever its role says. The
+    // role of a bot that comes back from the database is derived again (see CombatBotBaseAI::AutoAssignRole),
+    // and the taunts and the threat of a shield tank must not disappear because that derivation guessed a
+    // damage talent: no other warrior talent is dressed with a shield (see GetBotWeaponRules), so the shield is
+    // the rule that cannot be guessed wrong.
+    return me->GetClass() == CLASS_WARRIOR && IsWearingShield(me);
 }
 
 bool PartyBotAI::IsOtherPartyMember(Unit const* pTarget) const
@@ -1200,10 +1203,23 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
     }
 
     if (stanceForm == FORM_NONE || stanceForm == me->GetShapeshiftForm())
+    {
+        // A spell that asks for no form is not a stance spell, and the answer is false for it: a caller that is
+        // told that its stance is worn stops there, and a shield tank that believes it stands in Defensive Stance
+        // while it does not spends every update of its bot on a stance it never takes instead of on Revenge,
+        // Shield Block, Shield Slam or Sunder Armor.
+        if (stanceForm == FORM_NONE)
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Party bot %s: stance spell %u has no shapeshift effect",
+                me->GetName(), pStance->Id);
+            return false;
+        }
+
         return true;
+    }
 
     SpellCastResult const result = DoCastSpell(me, pStance);
-    if (result == SPELL_CAST_OK || me->GetShapeshiftForm() == stanceForm)
+    if (me->GetShapeshiftForm() == stanceForm)
         return true;
 
     // A bot can issue a stance change between its previous action and the next melee swing, where the ordinary cast
@@ -1214,6 +1230,9 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
     if (me->GetShapeshiftForm() == stanceForm)
         return true;
 
+    // Only the worn form says that a stance is taken. The core accepts the cast of a stance and applies it when
+    // the spell event of the caster runs, which can be after this update of the bot, and the caller must then go
+    // on with its rotation rather than wait for it: an asked stance comes, a rotation that waits for it does not.
     sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Party bot %s failed to switch to stance %u: normal %u, triggered %u",
         me->GetName(), pStance->Id, uint32(result), uint32(triggeredResult));
     return false;
@@ -4059,19 +4078,25 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
     // PartyBotAI::UpdateInCombatAI_Warrior.
     if (m_spells.warrior.pBattleShout &&
        !me->HasAura(m_spells.warrior.pBattleShout->Id) &&
-       (me->GetPower(POWER_RAGE) >= 10))
+       (me->GetPower(POWER_RAGE) >= 10 * PB_RAGE_PER_POINT))
     {
         if (CanTryToCastSpell(me, m_spells.warrior.pBattleShout))
             DoCastSpell(me, m_spells.warrior.pBattleShout);
     }
 
-    if (Unit* pVictim = me->GetVictim())
+    // Charge is only asked for here for the warrior that rests in Battle Stance. A shield tank rests in Defensive
+    // Stance, where Charge cannot be cast at all, and its opening belongs to PartyBotAI::AttackStart, which takes
+    // Battle Stance with the charge and keeps the target through it.
+    if (!protectionTank)
     {
-        if (m_spells.warrior.pCharge &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pCharge))
+        if (Unit* pVictim = me->GetVictim())
         {
-            if (DoCastSpell(pVictim, m_spells.warrior.pCharge) == SPELL_CAST_OK)
-                return;
+            if (m_spells.warrior.pCharge &&
+                CanTryToCastSpell(pVictim, m_spells.warrior.pCharge))
+            {
+                if (DoCastSpell(pVictim, m_spells.warrior.pCharge) == SPELL_CAST_OK)
+                    return;
+            }
         }
     }
 }

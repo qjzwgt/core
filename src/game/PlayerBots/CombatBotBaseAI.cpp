@@ -21,7 +21,6 @@ enum CombatBotSpells
     SPELL_MAIL_PROFICIENCY = 8737,
     SPELL_PLATE_PROFICIENCY = 750,
 
-    SPELL_SHIELD_SLAM = 23922,
     SPELL_HOLY_SHIELD = 20925,
     SPELL_SANCTITY_AURA = 20218,
     SPELL_SHADOWFORM = 15473,
@@ -63,7 +62,18 @@ void CombatBotBaseAI::AutoAssignRole()
     {
         case CLASS_WARRIOR:
         {
-            if (me->HasSpell(SPELL_SHIELD_SLAM))
+            // A bot that comes back from the database asks for its role here, because neither the role nor the
+            // asked talent is stored with it. One signature spell cannot give that role: the id that was asked
+            // for here is the sixteenth of the seventeen steps of the protection build of
+            // `playerbot_talent_build`, which a bot reaches only deep in that build, so every shield tank that
+            // is not deep in its build came back as a damage dealer - no Defensive Stance, no Taunt, no Sunder
+            // Armor, and the warrior routines left it in Battle Stance. The shield says a shield tank, since no
+            // other warrior talent is dressed with one (see GetBotWeaponRules), and the build that the talents
+            // were learned from says the talent of the bot that has no shield to read. The last page of a
+            // warrior is its protection tree, the same numbering of the pages that GetBotGearSpec reads.
+            uint8 talentPage = MAX_GEAR_SPEC_TABS;
+            if (IsWearingShield(me) ||
+                (GetLearnedTalentBuildPage(me, talentPage) && talentPage == 2))
                 m_role = ROLE_TANK;
             else
                 m_role = ROLE_MELEE_DPS;

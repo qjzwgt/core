@@ -266,8 +266,23 @@ document and the code in step - it is what the maintainer reads to tune the valu
     optional opening only when it is learned, ready, affordable and usable outside a dungeon; if it cannot open the
     fight, the tank still follows the target to melee in Defensive Stance. The same stance is its out-of-combat
     default, and the protection routine switches back to it before Revenge, Shield Block, Shield Slam and Sunder
-    Armor. A stance cast that the ordinary bot cast gate rejects uses the same spell through the triggered server path,
-    with the global cooldown put back, so a bot cannot remain locked in Battle Stance after Charge.
+    Armor. A stance cast that the ordinary bot cast gate rejects uses the same spell through the triggered server
+    path, with the global cooldown put back. Only the worn form says that a stance was taken: a routine that is
+    told anything else goes on with the skills of the stance that the bot is standing in, because a stance that was
+    asked for comes, while a routine that waits for it never runs. The out-of-combat `Charge` of the warrior routine
+    is left to the warrior that rests in Battle Stance; the opening of a shield tank belongs to `AttackStart()`,
+    which takes Battle Stance with the charge and keeps the target through it.
+
+18. The shield tank of the party is the warrior that wears a shield (`IsProtectionWarriorTank()`), and the role of
+    such a bot comes from the same rule when it comes back from the database: neither the role nor the asked
+    talent is stored with a saved bot, and a role set with `.bot setrole` is kept until the next load.
+    `AutoAssignRole()` reads the shield that the bot wears, and for a warrior without a shield the build of
+    `playerbot_talent_build` whose steps its learned talents complete the most (`GetLearnedTalentBuildPage()`).
+    One signature spell cannot say the talent of a warrior: the id that was asked for there is Shield Slam, the
+    sixteenth of the seventeen steps of the protection build, which a bot knows only when it is deep in that
+    build, so every shield tank that was not deep in its build came back as a damage dealer without a Defensive
+    Stance, a Taunt or a Sunder Armor. A bot cloned from a player matches no build, and so does a bot with too
+    few points spent to tell two builds apart: for both of them only the shield says the tank.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
