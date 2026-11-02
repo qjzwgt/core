@@ -751,15 +751,27 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
 
     if (me->GetClass() == CLASS_WARRIOR && !me->IsInCombat())
     {
-        if (me->GetShapeshiftForm() != FORM_BATTLESTANCE &&
-            m_spells.warrior.pBattleStance)
+        // Keep the target even while the stance change is still being applied. In particular, an explicit
+        // AttackStart() must not leave a shield tank without a victim merely because the next cast is a stance.
+        if (!me->Attack(pVictim, true) && me->GetVictim() != pVictim)
+            return false;
+
+        bool const openWithCharge = CanOpenWarriorCombatWithCharge();
+        bool const protectionTank = IsProtectionWarriorTank();
+        SpellEntry const* pStance = openWithCharge || !protectionTank ?
+            m_spells.warrior.pBattleStance : m_spells.warrior.pDefensiveStance;
+        ShapeshiftForm const desiredForm = openWithCharge || !protectionTank ?
+            FORM_BATTLESTANCE : FORM_DEFENSIVESTANCE;
+
+        if (pStance && me->GetShapeshiftForm() != desiredForm)
+            TrySwitchWarriorStance(pStance);
+
+        if (openWithCharge &&
+            me->GetShapeshiftForm() == FORM_BATTLESTANCE &&
+            TryChargeWarriorTarget(pVictim))
         {
-            TrySwitchWarriorStance(m_spells.warrior.pBattleStance);
             return true;
         }
-
-        if (TryChargeWarriorTarget(pVictim))
-            return true;
     }
 
     if (PrepareStealthOpener())
@@ -1065,6 +1077,17 @@ bool PartyBotAI::IsOtherPartyMember(Unit const* pTarget) const
 // A warrior opens a fight with Charge. A bot has no keyboard to keep the target at the
 // outside edge of the charge range, so the chase generator stops at the maximum range
 // and the spell is cast as soon as the target enters it.
+bool PartyBotAI::CanOpenWarriorCombatWithCharge() const
+{
+    Map* pMap = me->GetMap();
+    return me->GetClass() == CLASS_WARRIOR &&
+        m_spells.warrior.pCharge &&
+        !me->IsInCombat() &&
+        pMap && !pMap->IsDungeon() &&
+        me->IsSpellReady(m_spells.warrior.pCharge) &&
+        me->GetPower(POWER_RAGE) >= Spell::CalculatePowerCost(m_spells.warrior.pCharge, me);
+}
+
 bool PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
 {
     if (!pTarget || !m_spells.warrior.pCharge || me->IsInCombat())
@@ -1161,7 +1184,9 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
 {
     if (!pStance ||
         !me->IsSpellReady(pStance) ||
-        me->HasGCD(pStance))
+        me->HasGCD(pStance) ||
+        me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(pStance, me) ||
+        pStance->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK)
         return false;
 
     return DoCastSpell(me, pStance) == SPELL_CAST_OK;
@@ -1461,17 +1486,12 @@ Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
     }
     else
     {
-        Map* pMap = me->GetMap();
-        bool const canOpenWithCharge =
-            me->GetClass() == CLASS_WARRIOR &&
-            m_spells.warrior.pCharge &&
-            !me->IsInCombat() &&
-            pMap && !pMap->IsDungeon() &&
-            me->IsSpellReady(m_spells.warrior.pCharge) &&
-            me->GetPower(POWER_RAGE) >= Spell::CalculatePowerCost(m_spells.warrior.pCharge, me);
+        bool const canOpenWithCharge = CanOpenWarriorCombatWithCharge();
+        bool const canTakeFocusedTarget = canOpenWithCharge || IsProtectionWarriorTank();
 
-        // Stick to marked target in combat.
-        if (me->IsInCombat() || pLeader->GetVictim() || canOpenWithCharge)
+        // Stick to marked target in combat. A shield tank also answers a focused target out of combat without
+        // waiting for Charge, since that is the target that its party has already chosen to fight.
+        if (me->IsInCombat() || pLeader->GetVictim() || canTakeFocusedTarget)
         {
             for (auto markId : m_marksToFocus)
             {
@@ -1483,11 +1503,11 @@ Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
             }
         }
 
-        // A leader that only selects a target has not entered combat yet. A
-        // warrior with Charge may still open on that selection.
-        if (canOpenWithCharge && pLeader->GetTargetGuid().IsUnit())
+        // A leader that only selects a target has not entered combat yet. A warrior with Charge, and any shield
+        // tank, may still open on that selection.
+        if (canTakeFocusedTarget && pLeader->GetTargetGuid().IsUnit())
         {
-            if (Unit* pVictim = pMap->GetUnit(pLeader->GetTargetGuid()))
+            if (Unit* pVictim = me->GetMap()->GetUnit(pLeader->GetTargetGuid()))
                 if (IsValidHostileTarget(pVictim))
                     return pVictim;
         }
@@ -3994,10 +4014,17 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
     m_warriorSecondaryTargetGuid.Clear();
     m_warriorSecondarySundered = false;
 
-    if (m_spells.warrior.pBattleStance &&
-        CanTryToCastSpell(me, m_spells.warrior.pBattleStance))
+    bool const protectionTank = IsProtectionWarriorTank();
+    SpellEntry const* pStance = protectionTank ?
+        m_spells.warrior.pDefensiveStance : m_spells.warrior.pBattleStance;
+    ShapeshiftForm const desiredForm = protectionTank ?
+        FORM_DEFENSIVESTANCE : FORM_BATTLESTANCE;
+
+    if (pStance &&
+        me->GetShapeshiftForm() != desiredForm &&
+        CanTryToCastSpell(me, pStance))
     {
-        if (DoCastSpell(me, m_spells.warrior.pBattleStance) == SPELL_CAST_OK)
+        if (DoCastSpell(me, pStance) == SPELL_CAST_OK)
             return;
     }
 

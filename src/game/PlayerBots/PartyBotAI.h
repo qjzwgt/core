@@ -98,6 +98,7 @@ public:
     bool IsTankRoleWarrior(Player* pPlayer) const;
     bool IsProtectionWarriorTank() const;
     bool IsOtherPartyMember(Unit const* pTarget) const;
+    bool CanOpenWarriorCombatWithCharge() const;
     bool TryChargeWarriorTarget(Unit* pTarget);
     bool TryContinueWarriorCharge();
     bool UpdateProtectionWarriorTankTarget();

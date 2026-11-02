@@ -261,6 +261,13 @@ document and the code in step - it is what the maintainer reads to tune the valu
    a tank-role warrior above sixty per cent health. A shadow priest does not start the wand during the global cooldown
    left by a DoT, and an active wand gives way as soon as Mind Flay is ready and the target is in its range.
 
+17. A protection warrior tank treats the leader's selected or focused target as an attack order even while the group
+    is out of combat, and an explicit `AttackStart()` keeps that target while a stance is changed. Charge is an
+    optional opening only when it is learned, ready, affordable and usable outside a dungeon; if it cannot open the
+    fight, the tank still follows the target to melee in Defensive Stance. The same stance is its out-of-combat
+    default, and the protection routine switches back to it before Revenge, Shield Block, Shield Slam and Sunder
+    Armor.
+
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
   the compiled value. `.bot reload` reads the table again, so changing a value needs neither a restart nor a
