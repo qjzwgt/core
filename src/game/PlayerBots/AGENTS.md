@@ -271,18 +271,29 @@ document and the code in step - it is what the maintainer reads to tune the valu
     told anything else goes on with the skills of the stance that the bot is standing in, because a stance that was
     asked for comes, while a routine that waits for it never runs. The out-of-combat `Charge` of the warrior routine
     is left to the warrior that rests in Battle Stance; the opening of a shield tank belongs to `AttackStart()`,
-    which takes Battle Stance with the charge and keeps the target through it.
+    which takes Battle Stance with the charge and keeps the target through it, and the rotation of the tank brings
+    the Defensive Stance back on the next update.
+    `UpdateProtectionWarriorTankCombat()` and `UpdateOutOfCombatAI_Warrior()` are the only owners of the stance of a
+    shield tank: the taunt fallback casts `Taunt` and `Mocking Blow` in the stance the bot is wearing, which is the
+    stance rule of those spells as the cast gate of the bot applies it, asks for the chase of a target that is out of
+    melee reach, and answers false so that the rotation still runs. Where a second owner asked for another stance,
+    the Defensive Stance was taken away on one update and asked back on the next, both updates stopped at the stance,
+    and a shield tank stayed in the stance of its charge without a Taunt or a Sunder Armor.
 
-18. The shield tank of the party is the warrior that wears a shield (`IsProtectionWarriorTank()`), and the role of
-    such a bot comes from the same rule when it comes back from the database: neither the role nor the asked
-    talent is stored with a saved bot, and a role set with `.bot setrole` is kept until the next load.
-    `AutoAssignRole()` reads the shield that the bot wears, and for a warrior without a shield the build of
-    `playerbot_talent_build` whose steps its learned talents complete the most (`GetLearnedTalentBuildPage()`).
+18. A warrior is under the shield tank rules when it wears a shield, or when it carries the tank role without a
+    shield (`IsProtectionWarriorTank()`): the Defensive Stance, the taunts and the target handoff of a tank must not
+    depend on one gear slot being filled, and the role it falls back to was itself given by the shield, by the talent
+    build, or by `.partybot add <talent>`. The role of a bot that comes back from the database comes from the same
+    shield rule: neither the role nor the asked talent is stored with a saved bot, and a role set with
+    `.bot setrole` is kept until the next load. `AutoAssignRole()` reads the shield that the bot wears, and for a
+    warrior without a shield the build of `playerbot_talent_build` whose steps its learned talents complete the most
+    (`GetLearnedTalentBuildPage()`).
     One signature spell cannot say the talent of a warrior: the id that was asked for there is Shield Slam, the
     sixteenth of the seventeen steps of the protection build, which a bot knows only when it is deep in that
     build, so every shield tank that was not deep in its build came back as a damage dealer without a Defensive
     Stance, a Taunt or a Sunder Armor. A bot cloned from a player matches no build, and so does a bot with too
     few points spent to tell two builds apart: for both of them only the shield says the tank.
+    `.partybot stance` prints which of the two rules a selected warrior is under.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
@@ -323,6 +334,12 @@ created new), defense rating, weapon skills.
 - The handlers live in `PlayerBotMgr.cpp`; the sub command tables of `.partybot` and `.bot` are in
   `src/game/Chat/Chat.cpp`, which is a CRLF file. Add new commands to those tables with the existing aligned
   column layout and keep the CRLF endings.
+- `.partybot stance`, for the selected bot, prints what decides the stance of a warrior: the rules it is under
+  (shield tank or damage, from the off hand item), the talent its gear is rated for, the form it wears, which of the
+  three stance spells its spellbook knows, the gates of the stance the rules ask for now, and the reason that the
+  last stance ask was refused (`TrySwitchWarriorStance()` records it in `m_warriorStanceBlock`). That is how a
+  stance that never comes is told apart: a spell the bot has not learned, a gate that never clears, or a rule that
+  was never reached.
 - The talents that a bot can be summoned with are arguments of `.partybot add` and not sub commands of
   `src/game/Chat/Chat.cpp`: the list is `gearSpecAliases` in `BotGearScoring.cpp` and what every page means is in
   `BotGearScoring.md`. A new talent is a row in that list, with nothing to change in the command tables.

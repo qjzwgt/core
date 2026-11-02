@@ -1919,6 +1919,32 @@ bool ChatHandler::HandlePartyBotGearScoreCommand(char* args)
     return false;
 }
 
+// What makes a warrior party bot wear a stance: the rules it is under, the spells it knows, and the reason of the
+// last stance that it asked for. See PartyBotAI::PrintWarriorStanceState.
+bool ChatHandler::HandlePartyBotStanceCommand(char* args)
+{
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget)
+    {
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (pTarget->AI())
+    {
+        if (PartyBotAI* pAI = dynamic_cast<PartyBotAI*>(pTarget->AI()))
+        {
+            pAI->PrintWarriorStanceState(*this);
+            return true;
+        }
+    }
+
+    SendSysMessage("Target is not a party bot.");
+    SetSentErrorMessage(true);
+    return false;
+}
+
 bool ChatHandler::HandlePartyBotRemoveCommand(char* args)
 {
     Player* pTarget = GetSelectedPlayer();

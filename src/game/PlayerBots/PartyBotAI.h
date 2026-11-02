@@ -105,6 +105,7 @@ public:
     bool TryTauntProtectionWarriorTarget(Unit* pTarget);
     void UpdateProtectionWarriorTankCombat();
     bool TrySwitchWarriorStance(SpellEntry const* pStance);
+    void PrintWarriorStanceState(ChatHandler& handler) const;
     bool TryCastForcedWarriorSunder(Unit* pTarget);
     Unit* SelectProtectionWarriorSecondaryTarget(Unit const* pPrimaryTarget) const;
     bool HasThunderClapDebuff(Unit const* pTarget) const;
@@ -161,6 +162,25 @@ public:
     ObjectGuid m_warriorPrimaryTargetGuid;
     ObjectGuid m_warriorSecondaryTargetGuid;
     bool m_warriorSecondarySundered = false;
+
+    // Why the last stance that this bot asked for is not the form that it wears. The stance of a warrior is
+    // decided in one place, so the last ask and the reason of it are enough to read what a bot is doing; they
+    // are printed by `.partybot stance'. No cast was attempted when a result stays at -1.
+    enum WarriorStanceBlock
+    {
+        PB_STANCE_WORN = 0,                   // the asked form is the worn one
+        PB_STANCE_NO_SPELL,                   // no spell was passed: the bot does not know the stance
+        PB_STANCE_NOT_READY,                  // the spell or its category is on cooldown
+        PB_STANCE_GLOBAL_COOLDOWN,
+        PB_STANCE_POWER,                      // not enough rage for the stance
+        PB_STANCE_NO_FORM,                    // the spell has no shapeshift effect
+        PB_STANCE_CAST_REFUSED,               // both casts were refused and the form did not come
+    };
+
+    uint32 m_warriorStanceAskedId = 0;
+    uint32 m_warriorStanceBlock = PB_STANCE_WORN;
+    uint32 m_warriorStanceNormalResult = uint32(-1);
+    uint32 m_warriorStanceTriggeredResult = uint32(-1);
     float m_dropLandingZ = 0.0f;
     std::set<ObjectGuid> m_priestFortitudeMembers;
     bool m_priestFortitudeMembersInitialized = false;

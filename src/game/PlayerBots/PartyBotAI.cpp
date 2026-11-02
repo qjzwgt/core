@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <ctime>
 #include <random>
+#include <sstream>
 
 enum PartyBotSpells
 {
@@ -1061,12 +1062,22 @@ bool PartyBotAI::IsTankRoleWarrior(Player* pPlayer) const
 
 bool PartyBotAI::IsProtectionWarriorTank() const
 {
+    if (me->GetClass() != CLASS_WARRIOR)
+        return false;
+
     // A warrior of the party that wears a shield is the shield tank of that party whatever its role says. The
     // role of a bot that comes back from the database is derived again (see CombatBotBaseAI::AutoAssignRole),
     // and the taunts and the threat of a shield tank must not disappear because that derivation guessed a
     // damage talent: no other warrior talent is dressed with a shield (see GetBotWeaponRules), so the shield is
     // the rule that cannot be guessed wrong.
-    return me->GetClass() == CLASS_WARRIOR && IsWearingShield(me);
+    if (IsWearingShield(me))
+        return true;
+
+    // The role that a warrior carries was itself given by the shield, by the talent build that its learned
+    // talents complete, or by `.partybot add <talent>', so a protection warrior whose gear put no shield in its
+    // off hand still keeps the Defensive Stance, the taunts and the threat rules of its talent instead of
+    // fighting in the stance of a damage dealer.
+    return m_role == ROLE_TANK;
 }
 
 bool PartyBotAI::IsOtherPartyMember(Unit const* pTarget) const
@@ -1186,11 +1197,36 @@ bool PartyBotAI::HasThunderClapDebuff(Unit const* pTarget) const
 
 bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
 {
-    if (!pStance ||
-        !me->IsSpellReady(pStance) ||
-        me->HasGCD(pStance) ||
-        me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(pStance, me))
+    // Which gate refused the stance is remembered for `.partybot stance': the spells, the shield and the talent
+    // that decide the stance of a bot are not visible from the chat window otherwise, and a log line of DEBUG
+    // level is not open in a normal session.
+    m_warriorStanceAskedId = pStance ? pStance->Id : 0;
+    m_warriorStanceNormalResult = uint32(-1);
+    m_warriorStanceTriggeredResult = uint32(-1);
+
+    if (!pStance)
+    {
+        m_warriorStanceBlock = PB_STANCE_NO_SPELL;
         return false;
+    }
+
+    if (!me->IsSpellReady(pStance))
+    {
+        m_warriorStanceBlock = PB_STANCE_NOT_READY;
+        return false;
+    }
+
+    if (me->HasGCD(pStance))
+    {
+        m_warriorStanceBlock = PB_STANCE_GLOBAL_COOLDOWN;
+        return false;
+    }
+
+    if (me->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(pStance, me))
+    {
+        m_warriorStanceBlock = PB_STANCE_POWER;
+        return false;
+    }
 
     ShapeshiftForm stanceForm = FORM_NONE;
     for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
@@ -1210,32 +1246,160 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
         // Shield Block, Shield Slam or Sunder Armor.
         if (stanceForm == FORM_NONE)
         {
+            m_warriorStanceBlock = PB_STANCE_NO_FORM;
             sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Party bot %s: stance spell %u has no shapeshift effect",
                 me->GetName(), pStance->Id);
             return false;
         }
 
+        m_warriorStanceBlock = PB_STANCE_WORN;
         return true;
     }
 
     SpellCastResult const result = DoCastSpell(me, pStance);
+    m_warriorStanceNormalResult = uint32(result);
     if (me->GetShapeshiftForm() == stanceForm)
+    {
+        m_warriorStanceBlock = PB_STANCE_WORN;
         return true;
+    }
 
     // A bot can issue a stance change between its previous action and the next melee swing, where the ordinary cast
     // checks may still reject it as a spell in progress or a global cooldown. The triggered path applies the same
     // shapeshift aura that a player cast would apply; the GCD is still put back so the stance is not free.
     SpellCastResult const triggeredResult = me->CastSpell(me, pStance, true);
+    m_warriorStanceTriggeredResult = uint32(triggeredResult);
     me->AddGCD(pStance);
     if (me->GetShapeshiftForm() == stanceForm)
+    {
+        m_warriorStanceBlock = PB_STANCE_WORN;
         return true;
+    }
 
     // Only the worn form says that a stance is taken. The core accepts the cast of a stance and applies it when
     // the spell event of the caster runs, which can be after this update of the bot, and the caller must then go
     // on with its rotation rather than wait for it: an asked stance comes, a rotation that waits for it does not.
+    m_warriorStanceBlock = PB_STANCE_CAST_REFUSED;
     sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Party bot %s failed to switch to stance %u: normal %u, triggered %u",
         me->GetName(), pStance->Id, uint32(result), uint32(triggeredResult));
     return false;
+}
+
+static char const* GetWarriorStanceBlockName(uint32 block)
+{
+    switch (block)
+    {
+        case PartyBotAI::PB_STANCE_WORN:            return "worn";
+        case PartyBotAI::PB_STANCE_NO_SPELL:        return "no spell was given";
+        case PartyBotAI::PB_STANCE_NOT_READY:       return "the spell or its category is on cooldown";
+        case PartyBotAI::PB_STANCE_GLOBAL_COOLDOWN: return "the global cooldown of another spell";
+        case PartyBotAI::PB_STANCE_POWER:           return "not enough rage";
+        case PartyBotAI::PB_STANCE_NO_FORM:         return "the spell has no shapeshift effect";
+        case PartyBotAI::PB_STANCE_CAST_REFUSED:    return "both casts were refused";
+    }
+
+    return "nothing was asked";
+}
+
+static char const* GetWarriorStanceFormName(uint32 form)
+{
+    switch (form)
+    {
+        case FORM_BATTLESTANCE:      return "Battle Stance";
+        case FORM_DEFENSIVESTANCE:   return "Defensive Stance";
+        case FORM_BERSERKERSTANCE:   return "Berserker Stance";
+    }
+
+    return "no form";
+}
+
+// `.partybot stance'. Whether a warrior party bot wears a stance follows from what it knows, what it wears and the
+// talent that its gear is rated for, and none of that can be read from the chat window: a bot that stands in the
+// stance of its charge is asked to change, but which gate refuses the change, and whether the bot knows the stance
+// at all, is not written anywhere that a normal session shows.
+void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
+{
+    if (me->GetClass() != CLASS_WARRIOR)
+    {
+        handler.SendSysMessage("The selected party bot is not a warrior.");
+        return;
+    }
+
+    bool const protectionTank = IsProtectionWarriorTank();
+    SpellEntry const* pDesired = protectionTank ?
+        m_spells.warrior.pDefensiveStance : m_spells.warrior.pBattleStance;
+    ShapeshiftForm const desiredForm = protectionTank ? FORM_DEFENSIVESTANCE : FORM_BATTLESTANCE;
+    Item const* pOffhand = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+
+    std::ostringstream out;
+    out << "Stance state of " << me->GetName()
+        << "\n    rules: " << (protectionTank ? "shield tank" : "warrior damage")
+        << ", role of the bot: " << (m_role == ROLE_TANK ? "tank" : "not tank")
+        << ", off hand wears: " << (pOffhand ? pOffhand->GetProto()->Name1 : "nothing")
+        << ", gear is rated for: " << GetBotGearSpecName(GetBotGearSpec(me, m_role, m_requestedTalentPage));
+
+    out << "\n    asked talent page: ";
+    if (m_requestedTalentPage < MAX_GEAR_SPEC_TABS)
+        out << int(m_requestedTalentPage);
+    else
+        out << "none";
+
+    out << "\n    worn form: " << GetWarriorStanceFormName(me->GetShapeshiftForm())
+        << " (" << uint32(me->GetShapeshiftForm()) << ")"
+        << ", Tactical Mastery rank " << GetTacticalMasteryRank()
+        << ", rage " << me->GetPower(POWER_RAGE) / PB_RAGE_PER_POINT;
+
+    struct
+    {
+        char const* name;
+        SpellEntry const* pSpell;
+    } const stances[] = {
+        { "Battle Stance", m_spells.warrior.pBattleStance },
+        { "Defensive Stance", m_spells.warrior.pDefensiveStance },
+        { "Berserker Stance", m_spells.warrior.pBerserkerStance },
+    };
+
+    for (auto const& stance : stances)
+    {
+        out << "\n    " << stance.name << ": ";
+        if (stance.pSpell)
+            out << "known (" << stance.pSpell->Id << ")";
+        else
+            out << "not known by this bot";
+    }
+
+    out << "\n    the rules ask for: " << GetWarriorStanceFormName(desiredForm);
+    if (!pDesired)
+    {
+        out << ", which the bot has not learned";
+    }
+    else
+    {
+        out << " (" << pDesired->Id << "):"
+            << " cooldown " << (me->IsSpellReady(pDesired) ? "clear" : "running")
+            << ", global cooldown " << (me->HasGCD(pDesired) ? "running" : "clear")
+            << ", cost " << Spell::CalculatePowerCost(pDesired, me) / PB_RAGE_PER_POINT
+            << " rage";
+    }
+
+    out << "\n    last stance asked: ";
+    if (!m_warriorStanceAskedId)
+    {
+        out << "none since this bot entered the world";
+    }
+    else
+    {
+        SpellEntry const* pAsked = sSpellMgr.GetSpellEntry(m_warriorStanceAskedId);
+        out << (pAsked ? pAsked->SpellName[0].c_str() : "unknown spell") << " (" << m_warriorStanceAskedId
+            << ") blocked by " << GetWarriorStanceBlockName(m_warriorStanceBlock);
+
+        if (m_warriorStanceNormalResult != uint32(-1))
+            out << ", normal cast result " << m_warriorStanceNormalResult;
+        if (m_warriorStanceTriggeredResult != uint32(-1))
+            out << ", triggered cast result " << m_warriorStanceTriggeredResult;
+    }
+
+    handler.SendSysMessage(out.str().c_str());
 }
 
 // The ordinary spell gate refuses a second aura-only cast while the target still
@@ -1308,29 +1472,25 @@ bool PartyBotAI::TryTauntProtectionWarriorTarget(Unit* pTarget)
     bool const canMock = me->GetPower(POWER_RAGE) > 10 * PB_RAGE_PER_POINT &&
         m_spells.warrior.pMockingBlow &&
         me->IsSpellReady(m_spells.warrior.pMockingBlow);
-    if (canMock)
-    {
-        if (!me->CanReachWithMeleeAutoAttack(pTarget))
-        {
-            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
-                BeginChasing(pTarget);
-            return true;
-        }
-
-        if (me->GetShapeshiftForm() == FORM_BATTLESTANCE)
-        {
-            if (CanTryToCastSpell(pTarget, m_spells.warrior.pMockingBlow) &&
-                DoCastSpell(pTarget, m_spells.warrior.pMockingBlow) == SPELL_CAST_OK)
-                return true;
-        }
-        else if (GetTacticalMasteryRank() >= 2 &&
-                 TrySwitchWarriorStance(m_spells.warrior.pBattleStance))
-            return true;
-    }
-
-    if (me->GetShapeshiftForm() != FORM_DEFENSIVESTANCE &&
-        TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance))
+    // Mocking Blow is asked for in the stance that the tank is standing in: the cast gate of the bot applies the
+    // stance rule that the spell itself carries, so a stance change is not something this fallback can decide, and
+    // the stance of the tank belongs to PartyBotAI::UpdateProtectionWarriorTankCombat and to the out of combat
+    // routine of the warrior, which are the only two places that decide it. An ask here takes the Defensive Stance
+    // away on one update and asks for it back on the next, both updates stop at the stance, and the rotation of the
+    // tank - Revenge, Shield Block, Shield Slam, Sunder Armor - is never reached while this fallback is answering
+    // for a target that hits another party member.
+    if (canMock && me->CanReachWithMeleeAutoAttack(pTarget) &&
+        CanTryToCastSpell(pTarget, m_spells.warrior.pMockingBlow) &&
+        DoCastSpell(pTarget, m_spells.warrior.pMockingBlow) == SPELL_CAST_OK)
         return true;
+
+    // A target out of melee reach is chased, but the answer stays false: the caller then runs the rotation of the
+    // tank, which follows the same target at its end and is the only place that puts the bot into Defensive
+    // Stance. Stopping the update here was what kept a shield tank in the stance of its charge.
+    if (canMock &&
+        !me->CanReachWithMeleeAutoAttack(pTarget) &&
+        me->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
+        BeginChasing(pTarget);
 
     return false;
 }
