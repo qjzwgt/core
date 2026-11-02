@@ -227,8 +227,17 @@ document and the code in step - it is what the maintainer reads to tune the valu
    the reaction to another attacker on the party.
 
    New party and battle bots, party bots loaded from the database, and party bots that level up learn the ordinary
-   trainer spells of their current level. The trainer sync runs again only when the level changes. Quest-only class
-   abilities are not trainer spells and are not covered by it.
+   trainer spells of their current level, and the reward spells of the quests of their class and race come with
+   them. Both syncs run again only when the level changes. Some abilities of a class are taught by a quest and not
+   by a trainer - in 1.12 the defensive and the berserker stance of a warrior are the reward of class training
+   quests, and a warrior that has not learned them can not put on the stance of a tank - and a bot has no quest log
+   to be rewarded by them in the ordinary way, so `LearnQuestRewardSpellsForLevel()` reads `quest_template`
+   instead: a quest teaches the bot when its `RequiredClasses` and `RequiredRaces` include the bot, when its
+   `MinLevel` is reached, and when the reward belongs to the class of the bot (the spell family of the reward, or
+   the quest of one class with a reward that is not a spell of another class). `MaxLevel` of a quest is not asked
+   for: it says who may start such a quest, not who may know its reward, and a bot created at the top level must
+   still have the abilities of its class. A spell that a talent brings and a higher rank whose rank below it is
+   unknown are left out, as are spells that `SkillLineAbility.dbc` teaches at a higher level than the bot has.
 
 14. A party bot that has no target of its own first assists the current target of another group member within fifty
     yards, before it considers the units that are only attacking that member. Having a target is enough here because
@@ -340,6 +349,10 @@ created new), defense rating, weapon skills.
   last stance ask was refused (`TrySwitchWarriorStance()` records it in `m_warriorStanceBlock`). That is how a
   stance that never comes is told apart: a spell the bot has not learned, a gate that never clears, or a rule that
   was never reached.
+  A stance listed as not known is a spell that was never taught, which is a question for the two spell syncs of
+  rule 13 and not for the stance rules, so the command also lists the quests of this world that would give such a
+  stance to a character of the class and race of the bot, with the minimum level and the class and race masks that
+  their rows of `quest_template` ask for, or the words that no quest gives it.
 - The talents that a bot can be summoned with are arguments of `.partybot add` and not sub commands of
   `src/game/Chat/Chat.cpp`: the list is `gearSpecAliases` in `BotGearScoring.cpp` and what every page means is in
   `BotGearScoring.md`. A new talent is a row in that list, with nothing to change in the command tables.

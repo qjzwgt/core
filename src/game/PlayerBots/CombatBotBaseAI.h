@@ -100,6 +100,14 @@ public:
     bool PrepareDualWield();
     // The ordinary trainer spells that a character of the current level has been taught, learned once per level
     bool LearnTrainerSpellsForLevel();
+    // The spells that the quests of this class and race give at the current level, learned once per level: the
+    // class training quests teach abilities that no trainer sells, and a bot has no quest log to be rewarded by
+    // them in the ordinary way
+    bool LearnQuestRewardSpellsForLevel();
+    // Take one of those reward spells when the spell belongs to the class of the bot and its level asks for it
+    bool LearnQuestRewardSpell(uint32 spellId, uint32 spellFamily, bool questOfThisClass);
+    // The spells that a quest gives as its reward: both names written in its row, and the spells that those teach
+    static void CollectQuestRewardSpells(uint32 rewardSpell, uint32 rewardCast, std::vector<uint32>& rewardSpells);
     // The attributes and the score that one item would give to this bot, to rate the values of the weights
     void PrintGearItemScore(ChatHandler& handler, uint32 itemEntry);
     void LearnPremadeSpecForClass();
@@ -602,6 +610,7 @@ public:
     bool m_receivedBgInvite = false;
     uint8 m_visualHonorRank = 0;
     uint8 m_trainerTaughtLevel = 0;
+    uint8 m_questTaughtLevel = 0;
     uint8 m_ridingTaughtLevel = 0;
     CombatBotRoles m_role = ROLE_INVALID;
     uint8 m_requestedTalentPage = MAX_GEAR_SPEC_TABS;

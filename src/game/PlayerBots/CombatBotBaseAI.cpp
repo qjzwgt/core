@@ -2487,6 +2487,127 @@ bool CombatBotBaseAI::LearnTrainerSpellsForLevel()
     return true;
 }
 
+// The spells that the reward of a quest gives to a character. A quest names either the spell itself or a spell
+// that the reward casts on the character, and a spell that teaches another one is not a spell a character knows,
+// so what is collected is the spell that its learn effect triggers. Both names of the quest are read, as the core
+// casts `RewSpellCast` when it is written and `RewSpell` otherwise.
+void CombatBotBaseAI::CollectQuestRewardSpells(
+    uint32 rewardSpell, uint32 rewardCast, std::vector<uint32>& rewardSpells)
+{
+    uint32 const namedSpells[] = { rewardSpell, rewardCast };
+
+    for (uint32 namedSpell : namedSpells)
+    {
+        SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(namedSpell);
+        if (!pSpellEntry)
+            continue;
+
+        bool teachesAnother = false;
+        for (uint32 effectIndex = 0; effectIndex < MAX_EFFECT_INDEX; ++effectIndex)
+        {
+            if (pSpellEntry->Effect[effectIndex] != SPELL_EFFECT_LEARN_SPELL)
+                continue;
+
+            if (uint32 taughtSpell = pSpellEntry->EffectTriggerSpell[effectIndex])
+            {
+                rewardSpells.push_back(taughtSpell);
+                teachesAnother = true;
+            }
+        }
+
+        if (!teachesAnother)
+            rewardSpells.push_back(namedSpell);
+    }
+}
+
+// A character is not taught everything by a trainer: the defensive and the berserker stance of a warrior come from
+// the class training quests of its weaponmaster, which no trainer sells, and a bot that knows every trainer spell
+// of its level but not those stances stands in the stance of its charge and can neither Taunt nor Sunder Armor the
+// way a tank does. A bot has no quest log, so the quests that its class and race may take at its level give their
+// reward spell here, once for each level reached like the trainer sync does.
+bool CombatBotBaseAI::LearnQuestRewardSpellsForLevel()
+{
+    if (me->GetLevel() == m_questTaughtLevel)
+        return false;
+
+    m_questTaughtLevel = me->GetLevel();
+
+    ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(me->GetClass());
+    if (!classEntry)
+        return false;
+
+    uint32 const botClassMask = me->GetClassMask();
+    uint32 const botRaceMask = me->GetRaceMask();
+    std::vector<uint32> rewardSpells;
+    bool learned = false;
+
+    for (auto const& questItr : sObjectMgr.GetQuestTemplates())
+    {
+        Quest const* quest = questItr.second.get();
+        if (!quest)
+            continue;
+
+        // A quest written for another class or for another race teaches nothing to this bot.
+        if ((quest->GetRequiredClasses() && (quest->GetRequiredClasses() & botClassMask) == 0) ||
+            (quest->GetRequiredRaces() && (quest->GetRequiredRaces() & botRaceMask) == 0))
+            continue;
+
+        // The reward of a quest comes with the level at which the quest may be taken. The level that a quest stops
+        // being offered at is not asked for: it says who may start such a quest, not who may know its reward, and
+        // a bot created at the top level must still have the abilities of its class.
+        if (quest->GetMinLevel() > me->GetLevel())
+            continue;
+
+        bool const questOfThisClass = quest->GetRequiredClasses() != 0;
+
+        rewardSpells.clear();
+        CollectQuestRewardSpells(quest->GetRewSpell(), quest->GetRewSpellCast(), rewardSpells);
+        for (uint32 spellId : rewardSpells)
+        {
+            if (LearnQuestRewardSpell(spellId, classEntry->spellfamily, questOfThisClass))
+                learned = true;
+        }
+    }
+
+    return learned;
+}
+
+// Whether this bot may be taught one of the reward spells, and the learning of it. A spell that the Spell.dbc of
+// the running patch does not have, a broken spell, a spell that a talent brings (the talents of a bot come from
+// its build) and a higher rank whose rank below it is not known are all left out. The spell must belong to the
+// class of the bot, which the spell family of a spell of that class says by itself; a quest that asks for this
+// class says it as well, as long as its reward is not a spell of another class. A spell that SkillLineAbility.dbc
+// ties to a skill of the class is left for the level at which a trainer of the class teaches that spell.
+bool CombatBotBaseAI::LearnQuestRewardSpell(uint32 spellId, uint32 spellFamily, bool questOfThisClass)
+{
+    if (!spellId || me->HasSpell(spellId))
+        return false;
+
+    SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(spellId);
+    if (!pSpellEntry || !SpellMgr::IsSpellValid(pSpellEntry, me, false))
+        return false;
+
+    uint32 const firstRank = sSpellMgr.GetFirstSpellInChain(spellId);
+    if (GetTalentSpellCost(firstRank) > 0)
+        return false;
+    if (firstRank != spellId && !me->HasSpell(firstRank))
+        return false;
+
+    if (pSpellEntry->SpellFamilyName != spellFamily &&
+        (!questOfThisClass || pSpellEntry->SpellFamilyName != SPELLFAMILY_GENERIC))
+        return false;
+
+    // Read only the level of the view mode of the fit check, which asks for the level at which the class is
+    // taught the spell; the class of the bot is already settled by the filters above.
+    uint32 requiredLevel = 0;
+    me->IsSpellFitByClassAndRace(spellId, &requiredLevel);
+    if (requiredLevel && requiredLevel > me->GetLevel())
+        return false;
+
+    me->LearnSpell(spellId, false);
+    return true;
+}
+
 void CombatBotBaseAI::LearnPremadeSpecForClass()
 {
     // The talent of the bot: the one that `.partybot add <abbreviation>` asked for, or the one that the role of
@@ -2534,9 +2655,11 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
                     LearnTalentsInTab(leftTab, false);
             }
 
-            // The spells of the trainers and of the items come after the talents, as in the fallback below.
+            // The spells of the trainers, of the quests and of the items come after the talents, as in the
+            // fallback below.
             char itemArgs[] = "";
             LearnTrainerSpellsForLevel();
+            LearnQuestRewardSpellsForLevel();
             ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
             return;
         }
@@ -2586,6 +2709,7 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
         // Use gm command to learn spells on trainers and items.
         LearnRandomTalents();
         LearnTrainerSpellsForLevel();
+        LearnQuestRewardSpellsForLevel();
         char itemArgs[] = "";
         ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
     }

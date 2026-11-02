@@ -1313,6 +1313,58 @@ static char const* GetWarriorStanceFormName(uint32 form)
     return "no form";
 }
 
+// A stance that a warrior party bot has not been taught is a question for the data of the world and not for the
+// stance rules: a class ability comes either from a trainer of the class or from the reward of a quest. For the
+// stances the bot is missing, the quests that would give one to a character of this class and race are printed
+// with what their row of `quest_template` asks for, which is what tells a world without such a row from a row that
+// asks for a level the bot has not reached.
+static void AppendStanceRewardQuests(std::ostringstream& out, Player const* me,
+    std::vector<char const*> const& missingStances)
+{
+    if (missingStances.empty())
+        return;
+
+    uint32 const classMask = me->GetClassMask();
+    uint32 const raceMask = me->GetRaceMask();
+    std::vector<uint32> rewardSpells;
+
+    for (char const* stanceName : missingStances)
+    {
+        bool found = false;
+
+        for (auto const& questItr : sObjectMgr.GetQuestTemplates())
+        {
+            Quest const* quest = questItr.second.get();
+            if (!quest)
+                continue;
+
+            if ((quest->GetRequiredClasses() && (quest->GetRequiredClasses() & classMask) == 0) ||
+                (quest->GetRequiredRaces() && (quest->GetRequiredRaces() & raceMask) == 0))
+                continue;
+
+            rewardSpells.clear();
+            CombatBotBaseAI::CollectQuestRewardSpells(
+                quest->GetRewSpell(), quest->GetRewSpellCast(), rewardSpells);
+
+            for (uint32 spellId : rewardSpells)
+            {
+                SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(spellId);
+                if (!pSpellEntry || pSpellEntry->SpellName[0].find(stanceName) != std::string::npos)
+                    continue;
+
+                out << "\n        " << stanceName << " is the reward of quest " << quest->GetQuestId()
+                    << " \"" << quest->GetTitle() << "\", which asks for minimum level " << quest->GetMinLevel()
+                    << ", class mask 0x" << std::hex << quest->GetRequiredClasses() << std::dec
+                    << ", race mask 0x" << std::hex << quest->GetRequiredRaces() << std::dec;
+                found = true;
+            }
+        }
+
+        if (!found)
+            out << "\n        no quest of this world gives " << stanceName;
+    }
+}
+
 // `.partybot stance'. Whether a warrior party bot wears a stance follows from what it knows, what it wears and the
 // talent that its gear is rated for, and none of that can be read from the chat window: a bot that stands in the
 // stance of its charge is asked to change, but which gate refuses the change, and whether the bot knows the stance
@@ -1359,14 +1411,23 @@ void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
         { "Berserker Stance", m_spells.warrior.pBerserkerStance },
     };
 
+    // The stances the bot does not know are looked for in the quests of this world below, which is where an
+    // ability that no trainer sells comes from.
+    std::vector<char const*> missingStances;
+
     for (auto const& stance : stances)
     {
         out << "\n    " << stance.name << ": ";
         if (stance.pSpell)
             out << "known (" << stance.pSpell->Id << ")";
         else
+        {
             out << "not known by this bot";
+            missingStances.push_back(stance.name);
+        }
     }
+
+    AppendStanceRewardQuests(out, me, missingStances);
 
     out << "\n    the rules ask for: " << GetWarriorStanceFormName(desiredForm);
     if (!pDesired)
@@ -2039,6 +2100,8 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         // The riding skill and the mount of the bot's own race or class, for a bot created at the level that asks
         // for them and for a bot that was saved as a rider already: what the bot knows is left as it is.
         LearnTrainerSpellsForLevel();
+        // The abilities that the class training quests of the level teach, which no trainer sells.
+        LearnQuestRewardSpellsForLevel();
         LearnRidingAndMounts();
 
         ResetSpellData();
@@ -2315,7 +2378,13 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         // takes the riding and the summon of that rank here, out of the way of a fight and on the walk. Nothing is
         // asked of the bot whose level has not moved, and a bot that is called into the fight before it has its
         // mount gets it on the next step that it takes on foot.
-        if (LearnTrainerSpellsForLevel())
+        bool newSpells = LearnTrainerSpellsForLevel();
+        // A warrior that reaches the level of its class training quests takes the stances of those quests here,
+        // which is what lets it tank in the defensive stance instead of wearing the stance of its charge.
+        if (LearnQuestRewardSpellsForLevel())
+            newSpells = true;
+
+        if (newSpells)
         {
             ResetSpellData();
             PopulateSpellData();
