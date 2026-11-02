@@ -2125,6 +2125,30 @@ bool CombatBotBaseAI::IsValidHostileTarget(Unit const* pTarget) const
            pTarget->GetTransport() == me->GetTransport();
 }
 
+namespace
+{
+    // Some movement slows are marked as positive by the spell classification used for their holder. A negative
+    // speed modifier is still a debuff that a friendly dispel should remove.
+    bool HasNegativeMovementSpeedAura(SpellAuraHolder const* holder)
+    {
+        if (!holder)
+            return false;
+
+        for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        {
+            Aura const* aura = holder->GetAuraByEffectIndex(SpellEffectIndex(i));
+            if (!aura)
+                continue;
+
+            Modifier const* modifier = aura->GetModifier();
+            if (modifier->m_auraname == SPELL_AURA_MOD_DECREASE_SPEED && modifier->m_amount < 0.0f)
+                return true;
+        }
+
+        return false;
+    }
+}
+
 bool CombatBotBaseAI::IsValidDispelTarget(Unit const* pTarget, SpellEntry const* pSpellEntry) const
 {
     uint32 dispelMask = 0;
@@ -2159,7 +2183,7 @@ bool CombatBotBaseAI::IsValidDispelTarget(Unit const* pTarget, SpellEntry const*
                     holder->GetSpellProto()->Dispel == DISPEL_DISEASE ||
                     holder->GetSpellProto()->Dispel == DISPEL_POISON)
                 {
-                    bool positive = holder->IsPositive();
+                    bool positive = holder->IsPositive() && !HasNegativeMovementSpeedAura(holder);
                     // do not remove positive auras if friendly target
                     // do not remove negative auras if non-friendly target
                     // when removing charm auras ignore hostile reaction from the charm
