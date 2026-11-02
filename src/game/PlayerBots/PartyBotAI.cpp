@@ -749,8 +749,18 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
     if (me->IsMounted())
         me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
-    if (me->GetClass() == CLASS_WARRIOR && TryChargeWarriorTarget(pVictim))
-        return true;
+    if (me->GetClass() == CLASS_WARRIOR && !me->IsInCombat())
+    {
+        if (me->GetShapeshiftForm() != FORM_BATTLESTANCE &&
+            m_spells.warrior.pBattleStance)
+        {
+            TrySwitchWarriorStance(m_spells.warrior.pBattleStance);
+            return true;
+        }
+
+        if (TryChargeWarriorTarget(pVictim))
+            return true;
+    }
 
     if (PrepareStealthOpener())
         return true;
@@ -1134,10 +1144,13 @@ bool PartyBotAI::HasThunderClapDebuff(Unit const* pTarget) const
     if (!pTarget)
         return false;
 
-    for (Aura* pAura : pTarget->GetAurasByType(SPELL_AURA_MOD_MELEE_HASTE))
+    if (m_spells.warrior.pThunderClap && pTarget->HasAura(m_spells.warrior.pThunderClap->Id))
+        return true;
+
+    for (auto const& holder : pTarget->GetSpellAuraHolderMap())
     {
-        if (pAura &&
-            pAura->GetSpellProto()->IsFitToFamily<SPELLFAMILY_WARRIOR, CF_WARRIOR_THUNDER_CLAP>())
+        if (holder.second &&
+            holder.second->GetSpellProto()->IsFitToFamily<SPELLFAMILY_WARRIOR, CF_WARRIOR_THUNDER_CLAP>())
             return true;
     }
 
@@ -1146,7 +1159,9 @@ bool PartyBotAI::HasThunderClapDebuff(Unit const* pTarget) const
 
 bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
 {
-    if (!pStance || !CanTryToCastSpell(me, pStance))
+    if (!pStance ||
+        !me->IsSpellReady(pStance) ||
+        me->HasGCD(pStance))
         return false;
 
     return DoCastSpell(me, pStance) == SPELL_CAST_OK;
@@ -1446,8 +1461,17 @@ Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
     }
     else
     {
+        Map* pMap = me->GetMap();
+        bool const canOpenWithCharge =
+            me->GetClass() == CLASS_WARRIOR &&
+            m_spells.warrior.pCharge &&
+            !me->IsInCombat() &&
+            pMap && !pMap->IsDungeon() &&
+            me->IsSpellReady(m_spells.warrior.pCharge) &&
+            me->GetPower(POWER_RAGE) >= Spell::CalculatePowerCost(m_spells.warrior.pCharge, me);
+
         // Stick to marked target in combat.
-        if (me->IsInCombat() || pLeader->GetVictim())
+        if (me->IsInCombat() || pLeader->GetVictim() || canOpenWithCharge)
         {
             for (auto markId : m_marksToFocus)
             {
@@ -1457,6 +1481,15 @@ Unit* PartyBotAI::SelectAttackTarget(Player* pLeader) const
                         if (IsValidHostileTarget(pVictim))
                             return pVictim;
             }
+        }
+
+        // A leader that only selects a target has not entered combat yet. A
+        // warrior with Charge may still open on that selection.
+        if (canOpenWithCharge && pLeader->GetTargetGuid().IsUnit())
+        {
+            if (Unit* pVictim = pMap->GetUnit(pLeader->GetTargetGuid()))
+                if (IsValidHostileTarget(pVictim))
+                    return pVictim;
         }
 
         // Who is the leader attacking.
@@ -4022,8 +4055,15 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
             return;
     }
 
+    std::list<Unit*> nearbyEnemies;
+    me->GetEnemyListInRadiusAround(pVictim, 10.0f, nearbyEnemies);
+    uint8 hostileEnemyCount = 0;
+    for (Unit* pEnemy : nearbyEnemies)
+        if (pEnemy && me->IsHostileTo(pEnemy) && IsValidHostileTarget(pEnemy))
+            ++hostileEnemyCount;
+
     bool const needThunderClap =
-        me->GetEnemyCountInRadiusAround(pVictim, 10.0f) > 2 &&
+        hostileEnemyCount > 2 &&
         !HasThunderClapDebuff(pVictim) &&
         me->GetPower(POWER_RAGE) > 20 * PB_RAGE_PER_POINT &&
         m_spells.warrior.pThunderClap &&
@@ -4041,12 +4081,18 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
     if (needBattleStance)
     {
         if (me->GetShapeshiftForm() != FORM_BATTLESTANCE &&
-            TrySwitchWarriorStance(m_spells.warrior.pBattleStance))
+            m_spells.warrior.pBattleStance)
+        {
+            TrySwitchWarriorStance(m_spells.warrior.pBattleStance);
             return;
+        }
     }
     else if (me->GetShapeshiftForm() != FORM_DEFENSIVESTANCE &&
-             TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance))
+             m_spells.warrior.pDefensiveStance)
+    {
+        TrySwitchWarriorStance(m_spells.warrior.pDefensiveStance);
         return;
+    }
 
     // The Thunder Clap rule is a trigger, not an idle fallback: Shield Slam or
     // Sunder Armor would otherwise spend the rage that the rule asked to keep for
