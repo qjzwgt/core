@@ -212,8 +212,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
    approaching, `PartyBotAI::AttackStart()` only records the target and uses follow movement; neither `Unit::Attack()`
    nor `ChaseMovementGenerator` may start auto attacks before the opener has been cast. A party member that starts
    combat first does not stop that approach: the pending target stays with the rogue routine until the opener or a
-   normal attack replaces it. A rogue that already has stealth does not cancel it merely because no target has been
-   selected yet or because the leader leaves stealth; combat and the rules of the spell still break it normally. At
+   normal attack replaces it. `PartyBotAI::PrepareStealthOpener()` starts stealth or Prowl for a rogue or cat druid
+   when it is about to attack and is still out of combat, so the group's combat state does not skip the opening
+   approach. A rogue that already has stealth does not cancel it merely because no target has been selected yet or
+   because the leader leaves stealth; combat and the rules of the spell still break it normally. At
    two combo points it keeps Slice and Dice on a target above ten per cent health; below ten per cent it Eviscerates
    from three points; at five points it refreshes Slice and Dice below ten seconds and otherwise Eviscerates. Riposte
    precedes Sinister Strike, Kick is the only interrupt, Blade Flurry needs two nearby enemies that are not
@@ -252,7 +254,9 @@ document and the code in step - it is what the maintainer reads to tune the valu
     casts Fade as soon as a hostile unit has it as a target. Three injured party members below seventy per cent
     health within thirty yards call for Prayer of Healing. When every group member is at least ninety per cent health
     and no buff, heal or dispel is due, the healer shoots the target that the group is attacking with its wand. It does
-    not shield a tank-role warrior above sixty per cent health.
+    not shield a tank-role warrior above sixty per cent health. A shadow priest does not start the wand during the
+    global cooldown left by a DoT, and an active wand gives way as soon as Mind Flay is ready and the target is in its
+    range.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

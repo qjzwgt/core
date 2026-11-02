@@ -747,6 +747,9 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
     if (me->IsMounted())
         me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
+    if (PrepareStealthOpener())
+        return true;
+
     bool const waitForStealthOpener =
         me->GetClass() == CLASS_ROGUE &&
         me->HasAuraType(SPELL_AURA_MOD_STEALTH) &&
@@ -1569,16 +1572,29 @@ void PartyBotAI::UpdateAI(uint32 const diff)
     {
         // Stop auto shot if no target.
         if (!me->GetVictim())
+        {
             me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
+            return;
+        }
         else if (me->GetClass() == CLASS_HUNTER)
         {
             if (me->GetCombatDistance(me->GetVictim()) < 8.0f)
                 me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
             else
                 UpdateInCombatAI_Hunter();
+            return;
         }
-
-        return;
+        else if (me->GetClass() == CLASS_PRIEST &&
+                 GetRole() == ROLE_RANGE_DPS &&
+                 m_spells.priest.pMindFlay &&
+                 IsTargetInSpellRange(me->GetVictim(), m_spells.priest.pMindFlay) &&
+                 CanTryToCastSpell(me->GetVictim(), m_spells.priest.pMindFlay))
+        {
+            // A wand is only a filler for a shadow priest. Let the class routine take over as soon as Mind Flay can.
+            me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
+        }
+        else
+            return;
     }
 
     if (Spell* pCurrentSpell = me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
@@ -3391,6 +3407,14 @@ void PartyBotAI::UpdateInCombatAI_Priest()
                 return;
         }
 
+        // Do not turn a global cooldown into a wand filler. Auto-repeat would otherwise keep it selected after the
+        // next Mind Flay is ready.
+        SpellEntry const* pGcdSpell = m_spells.priest.pMindFlay ?
+            m_spells.priest.pMindFlay :
+            (m_spells.priest.pMindBlast ? m_spells.priest.pMindBlast : m_spells.priest.pSmite);
+        if (pGcdSpell && me->HasGCD(pGcdSpell))
+            return;
+
         if (me->HasSpell(PB_SPELL_SHOOT_WAND) &&
            !me->IsMoving() &&
            !me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
@@ -3909,6 +3933,10 @@ bool PartyBotAI::ShouldEnterStealth() const
     if (me->GetVictim() || me->InBattleGround() || me->IsFFAPvP())
         return true;
 
+    // A party member that starts a fight has put the group in combat even before this bot has a victim of its own.
+    if (GroupInCombat())
+        return true;
+
     if (me->GetHealthPercent() < 10.0f)
         return true;
 
@@ -3942,6 +3970,50 @@ bool PartyBotAI::EnterStealthIfNeeded(SpellEntry const* pStealthSpell)
                 CanTryToCastSpell(me, pStealthSpell) &&
                 DoCastSpell(me, pStealthSpell) == SPELL_CAST_OK)
                 return true;
+        }
+    }
+
+    return false;
+}
+
+bool PartyBotAI::PrepareStealthOpener()
+{
+    if (me->IsInCombat())
+        return false;
+
+    if (me->GetClass() == CLASS_ROGUE &&
+        m_spells.rogue.pStealth &&
+        (m_spells.rogue.pCheapShot || m_spells.rogue.pGarrote) &&
+        !me->HasAuraType(SPELL_AURA_MOD_STEALTH))
+    {
+        if (me->HasGCD(m_spells.rogue.pStealth))
+            return true;
+
+        return CanTryToCastSpell(me, m_spells.rogue.pStealth) &&
+            DoCastSpell(me, m_spells.rogue.pStealth) == SPELL_CAST_OK;
+    }
+
+    if (me->GetClass() == CLASS_DRUID &&
+        GetRole() == ROLE_MELEE_DPS &&
+        m_spells.druid.pCatForm &&
+        m_spells.druid.pProwl)
+    {
+        ShapeshiftForm const form = me->GetShapeshiftForm();
+        if (form == FORM_NONE)
+        {
+            if (me->HasGCD(m_spells.druid.pCatForm))
+                return true;
+
+            return EnterCombatDruidForm();
+        }
+
+        if (form == FORM_CAT && !me->HasAuraType(SPELL_AURA_MOD_STEALTH))
+        {
+            if (me->HasGCD(m_spells.druid.pProwl))
+                return true;
+
+            return CanTryToCastSpell(me, m_spells.druid.pProwl) &&
+                DoCastSpell(me, m_spells.druid.pProwl) == SPELL_CAST_OK;
         }
     }
 

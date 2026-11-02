@@ -88,6 +88,7 @@ public:
     void CallPetBackAfterTheDrop();
     bool ShouldEnterStealth() const;
     bool EnterStealthIfNeeded(SpellEntry const* pStealthSpell);
+    bool PrepareStealthOpener();
     bool IsManaUser(Player const* pPlayer) const;
     Player* SelectMissingGroupBuffTarget(SpellEntry const* pSingleSpellEntry,
         SpellEntry const* pGroupSpellEntry, bool manaUsersOnly, uint8& missingCount) const;
