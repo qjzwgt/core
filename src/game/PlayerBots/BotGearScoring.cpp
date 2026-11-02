@@ -611,6 +611,10 @@ BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec)
         case GEAR_SPEC_WARRIOR_ARMS:
             rules.policy = GEAR_WEAPON_POLICY_TWO_HANDED;
             rules.byWeaponDamage = true;
+            rules.rangedWeapon = true;
+            // The arms build can use a two handed axe or sword, and the requested build chooses only those.
+            rules.allowedMeleeWeaponSubclasses =
+                (1u << ITEM_SUBCLASS_WEAPON_AXE2) | (1u << ITEM_SUBCLASS_WEAPON_SWORD2);
             rules.allowDaggersAndFistWeapons = false;
             break;
 
@@ -619,12 +623,14 @@ BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec)
             rules.policy = me && me->CanDualWield() ? GEAR_WEAPON_POLICY_DUAL_WIELD
                 : GEAR_WEAPON_POLICY_ONE_HANDED_SHIELD;
             rules.byWeaponDamage = true;
+            rules.rangedWeapon = true;
             rules.allowDaggersAndFistWeapons = false;
             break;
 
         case GEAR_SPEC_WARRIOR_PROTECTION:
             rules.policy = GEAR_WEAPON_POLICY_ONE_HANDED_SHIELD;
             rules.byWeaponDamage = true;
+            rules.rangedWeapon = true;
             rules.allowDaggersAndFistWeapons = false;
             break;
 
@@ -639,11 +645,13 @@ BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec)
             break;
 
         case GEAR_SPEC_ROGUE:
-            // Without the dual wield of its trainer a rogue only dresses a one handed weapon. The combat tree is
-            // the only one of the rogue that this fork opens today, and the whole rating of GEAR_SPEC_ROGUE is
-            // that build, so the refusal of the light weapons covers the rogue of this repository.
+            // Without the dual wield of its trainer a rogue only dresses a one handed sword. The combat tree is the
+            // only one of the rogue that this fork opens today, and the whole rating of GEAR_SPEC_ROGUE is that
+            // build, so its melee subtype restriction belongs to the whole spec.
             rules.policy = me && me->CanDualWield() ? GEAR_WEAPON_POLICY_DUAL_WIELD : GEAR_WEAPON_POLICY_ONE_HANDED;
             rules.byWeaponDamage = true;
+            rules.rangedWeapon = true;
+            rules.allowedMeleeWeaponSubclasses = 1u << ITEM_SUBCLASS_WEAPON_SWORD;
             rules.allowDaggersAndFistWeapons = false;
             break;
 
@@ -696,10 +704,23 @@ BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec)
 
 bool IsWeaponKindRefused(ItemPrototype const* proto, BotGearWeaponRules const& rules)
 {
-    if (rules.allowDaggersAndFistWeapons || proto->Class != ITEM_CLASS_WEAPON)
+    if (proto->Class != ITEM_CLASS_WEAPON)
         return false;
 
-    return proto->SubClass == ITEM_SUBCLASS_WEAPON_DAGGER || proto->SubClass == ITEM_SUBCLASS_WEAPON_FIST;
+    bool const isMeleeWeapon =
+        proto->InventoryType == INVTYPE_2HWEAPON ||
+        proto->InventoryType == INVTYPE_WEAPON ||
+        proto->InventoryType == INVTYPE_WEAPONMAINHAND ||
+        proto->InventoryType == INVTYPE_WEAPONOFFHAND;
+    if (!isMeleeWeapon)
+        return false;
+
+    if (rules.allowedMeleeWeaponSubclasses &&
+        !(rules.allowedMeleeWeaponSubclasses & (1u << proto->SubClass)))
+        return true;
+
+    return !rules.allowDaggersAndFistWeapons &&
+        (proto->SubClass == ITEM_SUBCLASS_WEAPON_DAGGER || proto->SubClass == ITEM_SUBCLASS_WEAPON_FIST);
 }
 
 void EvaluateBotGearItem(Player* me, ItemPrototype const* proto, BotGearSpec spec, BotGearItemValue& value)

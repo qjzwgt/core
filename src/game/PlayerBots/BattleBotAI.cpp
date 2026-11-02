@@ -615,7 +615,12 @@ void BattleBotAI::UpdateAI(uint32 const diff)
         me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
         SummonPetIfNeeded();
         me->SetHealthPercent(100.0f);
-        me->SetPowerPercent(me->GetPowerType(), 100.0f);
+
+        // A player enters the world without rage. The other power types start full for a summoned bot.
+        if (me->GetClass() == CLASS_WARRIOR)
+            me->SetPower(POWER_RAGE, 0);
+        else
+            me->SetPowerPercent(me->GetPowerType(), 100.0f);
 
         if (urand(0, 1))
         {

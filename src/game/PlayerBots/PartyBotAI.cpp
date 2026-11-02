@@ -1033,7 +1033,11 @@ bool PartyBotAI::IsTankRoleWarrior(Player* pPlayer) const
 
 bool PartyBotAI::IsTargetedByHostile() const
 {
-    return !me->GetAttackers().empty();
+    for (Unit* pAttacker : me->GetAttackers())
+        if (pAttacker && pAttacker->IsAlive() && pAttacker->GetVictim() == me && pAttacker->IsHostileTo(me))
+            return true;
+
+    return false;
 }
 
 Unit* PartyBotAI::SelectDispelTargetWithPet(SpellEntry const* pSpellEntry) const
@@ -1473,7 +1477,12 @@ void PartyBotAI::UpdateAI(uint32 const diff)
         me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
         SummonPetIfNeeded();
         me->SetHealthPercent(100.0f);
-        me->SetPowerPercent(me->GetPowerType(), 100.0f);
+
+        // A player enters the world without rage. The other power types start full for a summoned bot.
+        if (me->GetClass() == CLASS_WARRIOR)
+            me->SetPower(POWER_RAGE, 0);
+        else
+            me->SetPowerPercent(me->GetPowerType(), 100.0f);
 
         uint32 newzone, newarea;
         me->GetZoneAndAreaId(newzone, newarea);
@@ -1864,8 +1873,7 @@ void PartyBotAI::UpdateOutOfCombatAI()
 
 void PartyBotAI::UpdateInCombatAI()
 {
-    if (m_role == ROLE_HEALER &&
-        me->GetClass() == CLASS_PRIEST &&
+    if (me->GetClass() == CLASS_PRIEST &&
         IsTargetedByHostile() &&
         m_spells.priest.pFade &&
         CanTryToCastSpell(me, m_spells.priest.pFade))
@@ -3269,7 +3277,8 @@ void PartyBotAI::UpdateInCombatAI_Priest()
             !me->IsMoving() &&
             !me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
         {
-            if (Unit* pTarget = SelectPartyAttackTarget())
+            Unit* pTarget = SelectPartyAttackTarget();
+            if (pTarget && pTarget->IsInCombat())
                 me->CastSpell(pTarget, PB_SPELL_SHOOT_WAND, false);
         }
     }

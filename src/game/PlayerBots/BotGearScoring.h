@@ -83,7 +83,10 @@ struct BotGearWeaponRules
 {
     BotGearWeaponPolicy policy = GEAR_WEAPON_POLICY_NONE;
     bool byWeaponDamage = false;                      // rank the weapons by their damage, not by their score
-    bool rangedWeapon = false;                        // the ranged slot holds a weapon, not a wand
+    bool rangedWeapon = false;                        // the ranged slot holds a bow, gun, crossbow or thrown weapon
+    // A zero mask allows every melee subtype. Otherwise a main hand or off hand weapon must be one of the masked
+    // item subclasses. Ranged and thrown weapons are not melee weapons and are not restricted by this mask.
+    uint32 allowedMeleeWeaponSubclasses = 0;
     // False when the talent wears neither a dagger nor a fist weapon. The weapon slots of such a talent are ranked
     // by the damage of the weapon, and there the light kinds win, which is not how a player of these talents is
     // dressed; the rule belongs to the talent and not to one slot, so that neither hand can wear one.
@@ -122,7 +125,8 @@ BotGearSpec GetBotGearSpec(Player const* me, CombatBotRoles role,
     uint8 requestedTalentPage = MAX_GEAR_SPEC_TABS);
 // How the weapon slots of a bot of that talent must be filled
 BotGearWeaponRules GetBotWeaponRules(Player const* me, BotGearSpec spec);
-// True when the talent refuses this kind of weapon: such an item is not a candidate for that bot, in any slot.
+// True when the talent refuses this kind of melee weapon: such an item is not a candidate for either hand. Ranged
+// weapons are not subject to the melee subtype restrictions.
 bool IsWeaponKindRefused(ItemPrototype const* proto, BotGearWeaponRules const& rules);
 
 // The talent asked by an abbreviation of `.partybot add`, nullptr when the argument is not one or when it belongs

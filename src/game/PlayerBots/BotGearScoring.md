@@ -161,9 +161,10 @@ score of its attributes, and which kinds of weapon are allowed.
 
 | Talent | Main hand | Off hand |
 | --- | --- | --- |
-| arms warrior, retribution paladin | two handed, highest damage | - |
+| arms warrior | two handed axe or sword, highest damage | - |
+| retribution paladin | two handed, highest damage | - |
 | fury warrior | one handed, highest damage | one handed, highest damage |
-| rogue | one handed, highest damage | one handed, highest damage |
+| rogue | one handed sword, highest damage | one handed sword, highest damage |
 | protection warrior, protection paladin | one handed, highest damage | the shield with the most armor |
 | enhancement shaman | same as protection until its talents give the two handed axes and maces, then a two handed weapon with the highest damage | shield |
 | hunter | attributes only, the best of {two handed} and {two one handed weapons} | a weapon |
@@ -180,12 +181,18 @@ Warriors of every talent and the combat rogue wear neither a dagger nor a fist w
 `allowDaggersAndFistWeapons` of `BotGearWeaponRules` says it, and the items of those kinds are not candidates for
 such a bot at all, so no slot of it can hold one: where the damage of the weapon decides, the light kinds win by
 their damage per second, and that is not how a player of these talents dresses.
-`IsWeaponKindRefused()` is the one place that reads the refusal, and `.partybot gearscore` prints it under the
-score of such an item, so the reason the weapon was never worn is visible.
+The arms warrior goes further and wears only a two handed axe or sword, while the combat rogue wears only a one
+handed sword. `allowedMeleeWeaponSubclasses` says which melee subtypes the build allows.
+`IsWeaponKindRefused()` is the one place that reads these restrictions, and `.partybot gearscore` prints a refused
+weapon under the score of the item, so the reason the weapon was never worn is visible.
+
+Warriors of every talent and the combat rogue also fill their ranged slot. A bow, gun, crossbow or thrown weapon is
+chosen by its weapon damage, in the same way as the ranged slot of a hunter. The melee subtype restrictions above do
+not reject that ranged weapon.
 
 A bot learns the dual wield of the trainers (spell 674) at the level where a player learns it: rogues at 10,
 warriors and hunters at 20 (`PrepareDualWield()`), because `Player::CanDualWield()` is not saved with the character.
-Until then a fury warrior is dressed like a protection warrior, a rogue wears a single one handed weapon, and a
+Until then a fury warrior is dressed like a protection warrior, a rogue wears a single one handed sword, and a
 hunter has no choice but a two handed melee weapon.
 
 ## Random properties

@@ -37,15 +37,16 @@ document and the code in step - it is what the maintainer reads to tune the valu
    `Player::SatisfyItemRequirements()` for this: besides teaching 674 for any `INVTYPE_WEAPONOFFHAND` item, it
    raises the level of the bot to the required level of the item and sets its pvp rank, reputations and spells.
 4. Weapon slots. Panel damage decides for arms warrior, retribution paladin, fury warrior, rogue, enhancement
-   shaman, and for the ranged slot of a hunter - the attributes of those weapons are ignored completely and equal
-   damage is resolved randomly. Tanks take a one handed weapon by damage plus the shield with the most armor, and
-   the armor of a shield is never added to the score of an option. The casting talents, the feral druid and the
-   melee weapons of a hunter are rated by attributes, comparing {two handed weapon or staff} against {one handed
-   weapon + off hand item}. Wands are rated by attributes; relics are not worn; the damage that a random property
-   adds to a weapon is not part of the damage used for ranking.
+   shaman, and for the ranged slot of a hunter, warrior or rogue - the attributes of those weapons are ignored
+   completely and equal damage is resolved randomly. Tanks take a one handed weapon by damage plus the shield with
+   the most armor, and the armor of a shield is never added to the score of an option. The casting talents, the
+   feral druid and the melee weapons of a hunter are rated by attributes, comparing {two handed weapon or staff}
+   against {one handed weapon + off hand item}. Wands are rated by attributes; relics are not worn; the damage that
+   a random property adds to a weapon is not part of the damage used for ranking.
    Warriors of any talent and the combat rogue wear no dagger and no fist weapon in either hand;
    `allowDaggersAndFistWeapons` of `BotGearWeaponRules` says it, and the items of those kinds never reach the
-   candidate pool of such a bot, so no slot of it can hold one.
+   candidate pool of such a bot. The arms warrior wears only a two handed axe or sword, and the combat rogue only a
+   one handed sword; `allowedMeleeWeaponSubclasses` says it. These melee restrictions do not reject a ranged weapon.
 5. The random property of an item is read from its `item_enchantment_template` group, scored together with the
    item, and then put on the item before the item is equipped. Equipping is what applies the mods of an item and
    what writes the visible fields of the equipment of the player, which is all that another player sees of what a
@@ -250,13 +251,13 @@ document and the code in step - it is what the maintainer reads to tune the valu
     casts Psychic Scream or Mana Burn. It dispels hostile buffs and dispels magic from the party. Outside combat a
     non-healing Shadowform priest waits twenty seconds when a resurrection or disease removal is needed, then breaks
     the form if the need remains; a shadow priest in combat removes only magic. A healing priest never enters
-    Shadowform, leaves an existing one before acting, dispels magic and disease from the party and their pets, and
-    casts Fade as soon as a hostile unit has it as a target. Three injured party members below seventy per cent
-    health within thirty yards call for Prayer of Healing. When every group member is at least ninety per cent health
-    and no buff, heal or dispel is due, the healer shoots the target that the group is attacking with its wand. It does
-    not shield a tank-role warrior above sixty per cent health. A shadow priest does not start the wand during the
-    global cooldown left by a DoT, and an active wand gives way as soon as Mind Flay is ready and the target is in its
-    range.
+   Shadowform, leaves an existing one before acting, dispels magic and disease from the party and their pets. A
+   priest of either role casts Fade as soon as a hostile unit has it as a target, at any distance. Three injured
+   party members below seventy per cent health within thirty yards call for Prayer of Healing. When every group
+   member is at least ninety per cent health and no buff, heal or dispel is due, the healer shoots a target that is
+   already in combat with its wand; it never starts a fight with the wand. It does not shield a tank-role warrior
+   above sixty per cent health. A shadow priest does not start the wand during the global cooldown left by a DoT,
+   and an active wand gives way as soon as Mind Flay is ready and the target is in its range.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

@@ -2741,9 +2741,13 @@ namespace
 
     bool IsRangedWeapon(ItemPrototype const* proto)
     {
+        if (proto->InventoryType == INVTYPE_THROWN)
+            return true;
+
         return proto->InventoryType == INVTYPE_RANGED &&
-            (proto->SubClass == ITEM_SUBCLASS_WEAPON_BOW || proto->SubClass == ITEM_SUBCLASS_WEAPON_GUN ||
-                proto->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW);
+            (proto->SubClass == ITEM_SUBCLASS_WEAPON_BOW ||
+             proto->SubClass == ITEM_SUBCLASS_WEAPON_GUN ||
+             proto->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW);
     }
 
     bool IsWand(ItemPrototype const* proto)
@@ -2948,9 +2952,9 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
         if (pProto->InventoryType == INVTYPE_TRINKET || pProto->InventoryType == INVTYPE_RELIC)
             continue;
 
-        // The kinds of weapon that the talent of the bot refuses. The items of those kinds are out of the
-        // candidates and not only out of one slot, so that neither hand of a warrior or of a combat rogue can
-        // wear a light weapon.
+        // The kinds of melee weapon that the talent refuses. The items of those kinds are out of the candidates and
+        // not only out of one slot, so that neither hand of an arms warrior or of a combat rogue can wear a weapon
+        // outside the subtypes of its build. Ranged weapons are unaffected by this rule.
         if (IsWeaponKindRefused(pProto, weaponRules))
             continue;
 
@@ -3140,7 +3144,8 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
 
         if (itr.first == EQUIPMENT_SLOT_RANGED)
         {
-            // A hunter wears a bow, a gun or a crossbow, the others only a wand for its attributes
+            // A hunter, warrior or rogue wears a bow, gun, crossbow or thrown weapon. The other classes only wear a
+            // wand for its attributes.
             if (weaponRules.rangedWeapon)
             {
                 key = GEAR_KEY_WEAPON_DAMAGE;
