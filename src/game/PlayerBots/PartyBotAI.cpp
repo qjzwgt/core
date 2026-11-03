@@ -105,6 +105,22 @@ enum PartyBotSpells
 #define PB_WARRIOR_PUMMEL_STANCE_RAGE_MIN 10
 #define PB_WARRIOR_PUMMEL_STANCE_RAGE_MAX 25
 
+// The rage, in points of rage, that a warrior asks to have before it jumps to a target with Intercept. It is
+// above the cost of the spell on purpose: the jump ends with the bot beside the mob it stunned, and a warrior that
+// arrives with nothing left cannot spend the ability that the stun opened. The rage of the change of stance that
+// the spell wants is paid for together with the spell, as everywhere else in these rules, and the floor is the
+// same for a shield tank and for a damage warrior.
+#define PB_WARRIOR_INTERCEPT_RAGE_MIN 10
+
+// A bank of rage for a Sweeping Strikes is kept for the mobs that the copied hit would really land on, and not
+// for the mobs that merely stand about the warrior: the spell copies a swing onto another target, so one target
+// in front of the bot is a swing copied onto nothing. How far a swing of this bot reaches is the core's own
+// answer, the one that its auto attack is gated by; the arc below, in radians from the direction that the bot
+// faces, is what this file calls the front of a character, and a mob at the back of the warrior is not a second
+// target of the copy. Both numbers are for the maintainer to tune.
+#define PB_WARRIOR_SWEEPING_STRIKE_TARGETS 2
+#define PB_WARRIOR_FRONT_HALF_ANGLE (M_PI_F / 3.0f)
+
 // What is taken for a ledge that a player jumps down instead of walking around: the leader stands that much lower
 // than the bot and that close by, and the pathfinder of the follow generator has no way down to offer. The ground
 // to land on is looked for along the line from the bot to its leader, in steps of PB_DROP_STEP_LAND_DIST, and it
@@ -114,6 +130,15 @@ enum PartyBotSpells
 #define PB_DROP_MAX_DIST 20.0f
 #define PB_DROP_STEP_LAND_DIST 2.0f
 #define PB_DROP_LAND_BELOW_LEADER 6.0f
+// A bot that the pathfinder has stopped at an edge is the case above. A bot that is walking is not stopped, and
+// the way that its generator has for a leader below an edge may go a long way around that edge instead of down
+// it: the detour is a way longer than the line to the leader by the factor and the extra distance below, and the
+// ledge that the bot stands on is lower than PB_DROP_MIN_Z_DIFF. That is ground that a player jumps down and that
+// a party should not wait for, so the bot goes over the edge with the smaller floor of the two. A slope that the
+// generator can walk down answers with a way that is the line itself, and is walked as it always was.
+#define PB_DROP_DETOUR_MIN_Z_DIFF 1.5f
+#define PB_DROP_DETOUR_FACTOR 1.5f
+#define PB_DROP_DETOUR_EXTRA_DIST 8.0f
 // How far above the ground it aimed for a bot may stand before it calls its pet back to it.
 #define PB_DROP_LAND_TOLERANCE 2.0f
 
@@ -727,10 +752,36 @@ void PartyBotAI::WalkToCorpseReclaimPoint(Corpse* pCorpse)
     me->GetMotionMaster()->MovePoint(0, standX, standY, standZ, MOVE_PATHFINDING);
 }
 
+// Whether the way that the follow generator of this bot has for its leader goes a long way round the edge that the
+// leader stands below, rather than down it. The pathfinder is asked for the same way that the generator is asking
+// for, and the length of that way is read against the line from the bot to its leader. A slope that the navigation
+// of this place can be walked down answers with a way that is that line, and the bot walks it as it always did;
+// only a way that is both a multiple of the line and longer than it by a length of ground of its own is a way that
+// goes round something. Where this place has no navigation to ask, and where no way reaches the leader at all, the
+// bot is not walking round an edge: the first is a world that has no way round anything, and the second is the bot
+// that stands stopped at the edge, which the rule below answers without asking the pathfinder again.
+bool PartyBotAI::IsFollowWayRoundTheLedge(Player const* pLeader, float distToLeader) const
+{
+    PathFinder path(me);
+    path.calculate(pLeader->GetPositionX(), pLeader->GetPositionY(), pLeader->GetPositionZ());
+
+    if (path.getPathType() & (PATHFIND_NOPATH | PATHFIND_NOT_USING_PATH))
+        return false;
+
+    if (path.getPath().size() < 2)
+        return false;
+
+    float const wayLength = path.Length();
+    return wayLength > distToLeader * PB_DROP_DETOUR_FACTOR &&
+        wayLength - distToLeader > PB_DROP_DETOUR_EXTRA_DIST;
+}
+
 // A party that goes down over a ledge goes down together. The leader of a party is a player that jumps, so the bot
 // that follows it goes over the edge as well instead of waiting for a way down that the pathfinder of the follow
-// generator does not find over an edge. The pet of the bot is sent away first, because a pet that is called at the
-// top of a ledge stands there until its master walks back for it, and it is called again once the bot stands on the
+// generator does not find over an edge. Two shapes of that are asked here: the bot that the pathfinder stopped at
+// an edge, which is the case this rule was first written for, and the bot that is walking a way which its generator
+// found the long way round the edge. The pet of the bot is sent away first, because a pet that is called at the top
+// of a ledge stands there until its master walks back for it, and it is called again once the bot stands on the
 // ground below.
 bool PartyBotAI::FollowLeaderDownTheDrop(Player* pLeader)
 {
@@ -750,14 +801,24 @@ bool PartyBotAI::FollowLeaderDownTheDrop(Player* pLeader)
         return false;
 
     float const zDrop = me->GetPositionZ() - pLeader->GetPositionZ();
-    // A step or a slope of less than this is walked down by the follow generator as it always is; a player jumps
-    // down what is more than that, and past PB_DROP_MAX_Z_DIFF the bot had better look for a way around too.
-    if (zDrop < PB_DROP_MIN_Z_DIFF || zDrop > PB_DROP_MAX_Z_DIFF)
+    // A step or a slope of less than the ledge floor is walked down by the follow generator as it always is; a
+    // player jumps down what is more than that, and past PB_DROP_MAX_Z_DIFF the bot had better look for a way
+    // around too. A bot that is walking is not a bot that the pathfinder stopped, and the edge that it walks round
+    // is one it would jump down itself: for that bot the ledge starts lower, and the way round is only given up
+    // when it really is a way round, which is asked of the pathfinder below rather than here.
+    bool const walking = me->IsMoving();
+    float const minLedgeDrop = walking ? PB_DROP_DETOUR_MIN_Z_DIFF : PB_DROP_MIN_Z_DIFF;
+    if (zDrop < minLedgeDrop || zDrop > PB_DROP_MAX_Z_DIFF)
         return false;
 
-    // Only a leader that waits close by has just jumped down, and a bot that is on its way has a path that goes
-    // down already: the one that stands at the edge is the bot that the pathfinder stopped.
-    if (me->IsMoving() || !me->IsWithinDist2d(pLeader->GetPositionX(), pLeader->GetPositionY(), PB_DROP_MAX_DIST))
+    // Only the way to the leader is a way that the party walks together. A bot whose movement generator is a chase
+    // or a place of its own routine is not following its leader over an edge.
+    if (walking && me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+        return false;
+
+    // Only a leader that waits close by has just jumped down; the ground below an edge that is farther out than
+    // this is not a place the party is standing on.
+    if (!me->IsWithinDist2d(pLeader->GetPositionX(), pLeader->GetPositionY(), PB_DROP_MAX_DIST))
         return false;
 
     // The ground at the foot of the ledge is looked for along the line from the bot to its leader and the place
@@ -786,7 +847,7 @@ bool PartyBotAI::FollowLeaderDownTheDrop(Player* pLeader)
         // on, and that answers as no landing place.
         float z = me->GetPositionZ();
         me->UpdateGroundPositionZ(x, y, z);
-        if (me->GetPositionZ() - z < PB_DROP_MIN_Z_DIFF)
+        if (me->GetPositionZ() - z < minLedgeDrop)
             continue;
 
         // The bot lands beside its leader rather than in a pit below the place where the leader stands.
@@ -805,6 +866,13 @@ bool PartyBotAI::FollowLeaderDownTheDrop(Player* pLeader)
     }
 
     if (!landingFound)
+        return false;
+
+    // The bot that stands at an edge was stopped there and has no way down that it is waiting for. A bot that is
+    // walking has a way, and the edge is jumped rather than walked round only when that way goes round it: the
+    // ground to land on is looked for first because it is the question that says whether there is an edge here at
+    // all, and the pathfinder is not asked for a place where nothing is to be jumped.
+    if (walking && !IsFollowWayRoundTheLedge(pLeader, distToLeader))
         return false;
 
     // A hunter that jumps down and leaves its pet above has to walk back for it, so the bot sends the pet away for
@@ -1470,6 +1538,41 @@ bool PartyBotAI::TryContinueWarriorCharge()
     return true;
 }
 
+// Intercept is the reach that a warrior has without a mount, and both of the warriors of the party are asked the
+// same question before they use it. What the spell itself gates is asked of the spell: the rank that the bot
+// knows, its cooldown, the global cooldown, the immunity of the target and the range that the data of the spell
+// covers, its minimum range with it. Two of the gates are rules rather than gates of the spell. The bot and its
+// target must both be fighting: out of a fight a warrior crosses that ground on its legs or with the opening that
+// Charge is, and the rage of a jump that nothing follows is the rage of a fight that the bot did not join. And
+// the target must be beyond a swing of the bot, which is the same ground as the minimum range of the spell read a
+// line above: a mob that the bot can already hit is not a mob to jump at.
+//
+// A target outside the far end of that range is not a target that the bot waits for. The chase that the rotation
+// of a warrior asks anyway walks it through the range of the spell, and the jump is asked on the update in which
+// the bot stands inside it; a bot that stopped at the edge of the range to cast would stand twenty yards from the
+// mob it is fighting and hit nothing, which is worse than the few steps of the walk.
+bool PartyBotAI::IsWarriorInterceptWanted(Unit const* pTarget) const
+{
+    SpellEntry const* pIntercept = m_spells.warrior.pIntercept;
+    if (!pTarget || !pIntercept || !me->IsInCombat() || !pTarget->IsInCombat())
+        return false;
+
+    if (!IsValidHostileTarget(pTarget) ||
+        !me->IsSpellReady(pIntercept) ||
+        me->HasGCD(pIntercept) ||
+        me->IsNonMeleeSpellCasted())
+        return false;
+
+    if (me->GetPower(POWER_RAGE) <= uint32(PB_WARRIOR_INTERCEPT_RAGE_MIN * PB_RAGE_PER_POINT) ||
+        IsWarriorRageShort(pIntercept, nullptr))
+        return false;
+
+    if (pTarget->IsImmuneToSpell(pIntercept, false) || !me->IsWithinLOSInMap(pTarget))
+        return false;
+
+    return !me->CanReachWithMeleeAutoAttack(pTarget) && IsTargetInSpellRange(pTarget, pIntercept);
+}
+
 uint32 PartyBotAI::GetTacticalMasteryRank() const
 {
     if (!m_spells.warrior.pTacticalMastery)
@@ -1780,20 +1883,20 @@ static char const* GetWarriorStanceFormName(uint32 form)
 
 // A stance that a warrior party bot has not been taught is a question for the data of the world and not for the
 // stance rules: a class ability comes either from a trainer of the class or from the reward of a quest. For the
-// stances the bot is missing, the quests that would give one to a character of this class and race are printed
-// with what their row of `quest_template` asks for, which is what tells a world without such a row from a row that
-// asks for a level the bot has not reached.
-static void AppendStanceRewardQuests(std::ostringstream& out, Player const* me,
-    std::vector<char const*> const& missingStances)
+// For the class abilities that the bot is missing, the quests that would give one to a character of this class and
+// race are printed with what their row of `quest_template` asks for, which is what tells a world without such a row
+// from a row that asks for a level the bot has not reached.
+static void AppendClassQuestRewardQuests(std::ostringstream& out, Player const* me,
+    std::vector<char const*> const& missingSpells)
 {
-    if (missingStances.empty())
+    if (missingSpells.empty())
         return;
 
     uint32 const classMask = me->GetClassMask();
     uint32 const raceMask = me->GetRaceMask();
     std::vector<uint32> rewardSpells;
 
-    for (char const* stanceName : missingStances)
+    for (char const* spellName : missingSpells)
     {
         bool found = false;
 
@@ -1814,10 +1917,10 @@ static void AppendStanceRewardQuests(std::ostringstream& out, Player const* me,
             for (uint32 spellId : rewardSpells)
             {
                 SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(spellId);
-                if (!pSpellEntry || pSpellEntry->SpellName[0].find(stanceName) != std::string::npos)
+                if (!pSpellEntry || pSpellEntry->SpellName[0].find(spellName) != std::string::npos)
                     continue;
 
-                out << "\n        " << stanceName << " is the reward of quest " << quest->GetQuestId()
+                out << "\n        " << spellName << " is the reward of quest " << quest->GetQuestId()
                     << " \"" << quest->GetTitle() << "\", which asks for minimum level " << quest->GetMinLevel()
                     << ", class mask 0x" << std::hex << quest->GetRequiredClasses() << std::dec
                     << ", race mask 0x" << std::hex << quest->GetRequiredRaces() << std::dec;
@@ -1826,7 +1929,7 @@ static void AppendStanceRewardQuests(std::ostringstream& out, Player const* me,
         }
 
         if (!found)
-            out << "\n        no quest of this world gives " << stanceName;
+            out << "\n        no quest of this world gives " << spellName;
     }
 }
 
@@ -1876,9 +1979,9 @@ void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
         { "Berserker Stance", m_spells.warrior.pBerserkerStance },
     };
 
-    // The stances the bot does not know are looked for in the quests of this world below, which is where an
+    // The abilities that the bot does not know are looked for in the quests of this world below, which is where an
     // ability that no trainer sells comes from.
-    std::vector<char const*> missingStances;
+    std::vector<char const*> missingClassQuestSpells;
 
     for (auto const& stance : stances)
     {
@@ -1888,11 +1991,24 @@ void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
         else
         {
             out << "not known by this bot";
-            missingStances.push_back(stance.name);
+            missingClassQuestSpells.push_back(stance.name);
         }
     }
 
-    AppendStanceRewardQuests(out, me, missingStances);
+    // Intercept is asked by the rules of a shield tank and by the rotation of a damage warrior, and it reaches a
+    // warrior of this world from the same source as the stances: the reward of a class quest rather than the list
+    // of a trainer. A warrior that has reached the level of that quest and does not know the spell is therefore
+    // asked here the same question as a warrior without a stance, because the answer is the same row of data.
+    out << "\n    Intercept: ";
+    if (m_spells.warrior.pIntercept)
+        out << "known (" << m_spells.warrior.pIntercept->Id << ")";
+    else
+    {
+        out << "not known by this bot";
+        missingClassQuestSpells.push_back("Intercept");
+    }
+
+    AppendClassQuestRewardQuests(out, me, missingClassQuestSpells);
 
     // The two facts that the stance of a damage warrior is made of: the rotation keeps the Berserker Stance while
     // the bot has one and not the other, and a bot that changed the stance it keeps in the middle of its levels
@@ -4914,6 +5030,40 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
     if (m_warriorChargeOpeningThunderClap && me->GetShapeshiftForm() != FORM_BATTLESTANCE)
         m_warriorChargeOpeningThunderClap = false;
 
+    // Intercept is how a shield tank gets hold of a mob that has walked out of a swing: the jump crosses that
+    // ground in one spell, stuns the mob, and costs less than the walk it replaces. The gates of the spell, of the
+    // rage and of the ground are the ones that a damage warrior is asked too (IsWarriorInterceptWanted()); only
+    // the answer is written here, because the routine of a shield tank is not the wants of a damage warrior.
+    //
+    // The jump is allowed in the Berserker Stance, which is what a shield tank that wants to make it is asked to
+    // change to. That change is bought with rage, so it is asked for only where the talent that keeps the rage
+    // through a change was taken: the Defensive Stance is asked back by the rule below on the update after the
+    // jump, and a tank without that talent would pay for the change twice and stand beside the mob with nothing
+    // left to hold it by. With the talent this is the same shape of ask that the Battle Stance of a Mocking Blow
+    // is, and the rule of the tank's own stance takes the Defensive Stance back on its own. Where the bot already
+    // wears the stance that the spell wants, the ask is the spell itself.
+    if (IsWarriorInterceptWanted(pVictim))
+    {
+        SpellEntry const* pIntercept = m_spells.warrior.pIntercept;
+        if (me->GetShapeshiftForm() == FORM_BERSERKERSTANCE)
+        {
+            if (CanTryToCastSpell(pVictim, pIntercept) &&
+                DoCastSpell(pVictim, pIntercept) == SPELL_CAST_OK)
+                return;
+        }
+        else if (GetTacticalMasteryRank())
+        {
+            // The change and the jump are paid for together, as everywhere else here. Where the rage for both is
+            // not there the tank leaves the jump out and goes on with its routine, which is the answer that a want
+            // of a damage rotation gets too; its own rule of Bloodrage above is what brings the rage back.
+            SpellEntry const* pBerserkerStance = GetWarriorStanceSpell(FORM_BERSERKERSTANCE);
+            if (pBerserkerStance &&
+                !IsWarriorRageShort(pIntercept, pBerserkerStance) &&
+                TrySwitchWarriorStance(pBerserkerStance))
+                return;
+        }
+    }
+
     bool const needMockingBlow = IsWarriorMockingBlowWanted(pVictim);
 
     // What the two rules of the clap have in common: the spell, its cooldown, the rage for its cost and for the
@@ -5066,6 +5216,26 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         BeginChasing(pVictim);
 }
 
+// Whether a unit stands in the arc that the bot faces: what this file calls the front of a character, which the
+// core has no test for because the side that a swing lands on is decided on the client. A warrior that stands in
+// the middle of a pack does not hit all of it - the weapon of a melee character goes where the character looks -
+// and the copy that a Sweeping Strikes makes lands on the mobs that the swing itself could reach. The mobs at the
+// back of the bot are therefore not the second target that the spell was asked for, which is the difference this
+// reading makes: the pack of a warrior with one mob in front of it and two behind is a pack that the copy of a
+// hit never touches.
+static bool IsInFrontOfWarrior(Player const* me, Unit const* pUnit)
+{
+    // Both angles are the 0..2pi of the core, so the difference of them is one turn at most and is brought into
+    // the signed half turn by one correction either way.
+    float angle = me->GetAngle(pUnit) - me->GetOrientation();
+    if (angle > M_PI_F)
+        angle -= 2.0f * M_PI_F;
+    else if (angle < -M_PI_F)
+        angle += 2.0f * M_PI_F;
+
+    return angle <= PB_WARRIOR_FRONT_HALF_ANGLE && angle >= -PB_WARRIOR_FRONT_HALF_ANGLE;
+}
+
 // What the area about a warrior that a spell of several mobs would step on holds: the red-name mobs of the pack,
 // a neutral at peace that the area would wake, and a mob held by a control that damage breaks. A Whirlwind and a
 // bank of rage for a Sweeping Strikes are both asked for at the pack of the melee, and the two looks that the
@@ -5073,6 +5243,11 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
 // join a second fight that the party did not start, and the control that another party member is keeping would be
 // spoiled by the damage that the spell puts on the held mob. The count is asked only of the red names, because a
 // neutral that has joined a fight of its own is not a mob that the spell of the warrior was asked for.
+//
+// The third count is for the one of those spells that copies a hit rather than drawing its area round the
+// warrior: the mobs that a swing of this bot could really land on are the reach of its weapon as the core
+// measures it for its own auto attack, in the front that the bot stands in. A Whirlwind is asked at the mobs
+// about the bot as it always was; the copy of a Sweeping Strikes is not.
 PartyBotAI::WarriorMeleePackRead PartyBotAI::ReadWarriorMeleePack(Unit const* pCenter) const
 {
     WarriorMeleePackRead read;
@@ -5094,7 +5269,12 @@ PartyBotAI::WarriorMeleePackRead PartyBotAI::ReadWarriorMeleePack(Unit const* pC
             read.breakableControl = true;
 
         if (me->GetReactionTo(pUnit) == REP_HOSTILE)
+        {
             ++read.redCount;
+
+            if (me->CanReachWithMeleeAutoAttack(pUnit) && IsInFrontOfWarrior(me, pUnit))
+                ++read.reachCount;
+        }
     }
 
     return read;
@@ -5136,6 +5316,21 @@ void PartyBotAI::CollectWarriorDamageWants(Unit* pVictim, std::vector<WarriorRot
     if (IsSkullConEliteTarget(pVictim))
         AddWant(m_spells.warrior.pDeathWish, me, FORM_NONE, false, false, false);
 
+    // Intercept is the reach of a warrior that has no mount, and it is asked for at the one moment in which
+    // nothing else of the rotation has anything to say: the target is beyond a swing of the bot and inside the
+    // range that the spell covers, which IsWarriorInterceptWanted() reads from the data of that spell. The place
+    // of the want in the rank of the rotation is therefore worth little - the abilities below it are refused by
+    // the same distance.
+    //
+    // The stance that the jump is allowed in is named here rather than read from the data of the spell, because
+    // the rule is about what the change of stance costs: a bot that wears that stance jumps where it stands, and
+    // a bot in another one is changed only with the talent that keeps its rage through the change. Without that
+    // talent the jump is not worth the rage and the global cooldown of a change that the rotation asks back a
+    // moment later, which is the same reading that Overpower and the rest of this list carry.
+    if (IsWarriorInterceptWanted(pVictim))
+        AddWant(m_spells.warrior.pIntercept, pVictim, FORM_BERSERKERSTANCE, GetTacticalMasteryRank() > 0,
+            false, false);
+
     WarriorMeleePackRead const pack = ReadWarriorMeleePack(me);
 
     // Sweeping Strikes is the hit of the warrior over the pack of the melee. Where the pack is there, the bot
@@ -5144,7 +5339,13 @@ void PartyBotAI::CollectWarriorDamageWants(Unit* pVictim, std::vector<WarriorRot
     // and the sweep that never came is what the rage spent elsewhere would have bought. The rage that the spell
     // wants is the cost that its own data names; the bot does not spend below it until the rage is there, which is
     // what makes the want a bank rather than an attempt.
-    if (pack.redCount > 1 && !pack.neutralAtPeace && !pack.breakableControl)
+    //
+    // The pack that the spell is asked for is the pack of the swings and not the pack of the walk: as many mobs
+    // as the copied hits would land on, which is the reach of this bot's weapon in the front that the bot faces.
+    // A count of the mobs about the warrior was the rule before, and a warrior standing with one mob in front of
+    // it and two behind spent its banked rage on a copy that had nothing to hit.
+    if (pack.reachCount >= PB_WARRIOR_SWEEPING_STRIKE_TARGETS &&
+        !pack.neutralAtPeace && !pack.breakableControl)
         AddWant(m_spells.warrior.pSweepingStrikes, me, FORM_BATTLESTANCE, true, true, false);
 
     // Overpower is the answer to a dodge of the mob, and it is only asked for in the Battle Stance and never with

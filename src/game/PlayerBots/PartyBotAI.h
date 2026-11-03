@@ -86,6 +86,11 @@ public:
     bool CrowdControlMarkedTargets();
     bool EnterCombatDruidForm();
     bool FollowLeaderDownTheDrop(Player* pLeader);
+    // Whether the way that the follow generator has for its leader goes a long way round the edge that the
+    // leader stands below, rather than down it. The bot that is walking such a way is a bot that a player would
+    // send over the edge instead, and it is the case that the rule above does not reach: that one is for the bot
+    // that the pathfinder stopped at an edge, and this one is for the bot that is moving.
+    bool IsFollowWayRoundTheLedge(Player const* pLeader, float distToLeader) const;
     void CallPetBackAfterTheDrop();
     bool ShouldEnterStealth() const;
     bool EnterStealthIfNeeded(SpellEntry const* pStealthSpell);
@@ -116,6 +121,14 @@ public:
     bool CanAskWarriorChargeLater();
     void ClearWarriorChargeOpening();
     bool TryContinueWarriorCharge();
+    // Whether a target is ground that Intercept is for: both sides fighting, the target out of a swing of the
+    // bot's reach and inside the range that the spell covers, the spell ready, and the rage above the cost of it
+    // there. One question for a shield tank and for a damage warrior, because both of them jump at a target that
+    // they cannot hit; the two reach the answer in their own way. The tank asks the spell in
+    // UpdateProtectionWarriorTankCombat(), and the damage warrior carries the answer into its rotation as a want
+    // that names the stance the spell wants, which is what makes the change of stance paid for together with the
+    // spell and undone after it.
+    bool IsWarriorInterceptWanted(Unit const* pTarget) const;
     bool UpdateProtectionWarriorTankTarget();
     bool TryTauntProtectionWarriorTarget(Unit* pTarget);
     bool HasWarriorMockingBlowReady() const;
@@ -167,6 +180,10 @@ public:
     struct WarriorMeleePackRead
     {
         uint8 redCount = 0;
+        // Of those hostile mobs, the ones that a swing of the bot could really land on: within the reach of its
+        // weapon and in the arc that it faces. A hit copied by a Sweeping Strikes lands on those and on no other,
+        // so a pack that is only about the bot is not a pack that the spell was asked for.
+        uint8 reachCount = 0;
         bool neutralAtPeace = false;
         bool breakableControl = false;
     };

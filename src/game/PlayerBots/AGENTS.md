@@ -154,16 +154,28 @@ document and the code in step - it is what the maintainer reads to tune the valu
    ride stays on foot. A mounted group is still travelling: a combat flag or an attacker on a mounted member does not
    make its bots join, and only a group member who has dismounted and is fighting does.
 11. A party that goes down over a ledge goes down together, because the leader of a party is a player that jumps.
-   `PartyBotAI::FollowLeaderDownTheDrop()` is for the bot that the pathfinder of the follow generator has stopped at
-   the edge while its leader waits below it. The ledge is the height difference and the distance of
-   `PB_DROP_MIN_Z_DIFF` and `PB_DROP_MAX_DIST` in `PartyBotAI.cpp`: what is lower than the first is a slope that the
+   `PartyBotAI::FollowLeaderDownTheDrop()` answers two shapes of that. One is the bot that the pathfinder of the
+   follow generator has stopped at the edge while its leader waits below it, which is the case the rule was first
+   written for; the other is a bot that is walking a way which its generator found the long way round the edge.
+   The ledge is the height difference and the distance of `PB_DROP_MIN_Z_DIFF` and `PB_DROP_MAX_DIST` in
+   `PartyBotAI.cpp`: what is lower than the first is a slope that the
    follow generator walks down as it always does, and what is deeper than the second is a drop that the bot had
    better look for a way around for, as the follow generator does on its own. The place to land is looked for along
    the line from the bot to its leader and the one nearest the leader is taken, of the places where the ground really
    is lower and where the way over the edge is free, so an overhang sends the bot around rather than into the rock.
    The fall itself is a `MovePoint()` with `MOVE_FALLING` and without pathfinding, which is the movement that the
    gravity of the client moves; there is no path over an edge to be found, and a path would lead the bot back up to
-   the edge. The pet of the bot is dismissed for the drop, because a pet that is called at the top of a ledge stands
+   the edge. A bot that is walking is not a bot that the pathfinder stopped, and it loses the jump the other way:
+   its generator has found a way that goes a long way round the edge, and the bot walks it while its leader waits
+   below. `PartyBotAI::IsFollowWayRoundTheLedge()` asks the pathfinder for that same way and reads its length
+   against the line from the bot to its leader; a way longer than that line by `PB_DROP_DETOUR_FACTOR` and by
+   `PB_DROP_DETOUR_EXTRA_DIST` of ground of its own is a way round an edge, and for that bot the ledge floor is the
+   lower `PB_DROP_DETOUR_MIN_Z_DIFF`. A slope that the navigation of the place can be walked down answers with a way
+   that is the line itself, and is walked as it always was; a place with no navigation to ask, and a way that does
+   not reach the leader at all, are left to the follow generator. The way is asked for only while the movement
+   generator of the bot is the follow one, and only after the ground to land on has been found, which is the
+   question that says whether there is an edge here at all; those two numbers of the detour are for the maintainer
+   to tune. The pet of the bot is dismissed for the drop, because a pet that is called at the top of a ledge stands
    there until its master walks back for it: the bot calls it back with `Player::ResummonPetTemporaryUnSummonedIfAny()`
    once it stands on the ground that it aimed for, and while it waits above the ledge the updates of the hunter and of
    the warlock are held from summoning it again, since a pet is called to where its master stands. A bot that must
@@ -389,6 +401,26 @@ document and the code in step - it is what the maintainer reads to tune the valu
     already fighting is in that fight whatever the shout does to it, and is no reason to hold the shout back. Only
     the units that the shout could really reach are looked at, and the shout is let off at the tank itself as
     `Battle Shout` is, because the area of the spell is the tank.
+    `Intercept` is the reach that a warrior has without a mount, and the question of whether a target is ground for
+    it is one function for both of the warriors of the party, `PartyBotAI::IsWarriorInterceptWanted()`: the bot and
+    its target must both be fighting, the target must be out of a swing of the bot and inside the range that the
+    data of the spell covers (its minimum range with it, which is the same ground as the swing read a line above),
+    the spell must be ready and free of the global cooldown, and the rage must be above
+    `PB_WARRIOR_INTERCEPT_RAGE_MIN` points. What the spell itself gates - the rank in the spellbook, its cooldown,
+    the global cooldown, the immunity of the target and the line of sight to it - is asked of the spell and never of
+    a rule of the bot. A target beyond the far end of that range is not waited for: the chase that the rotation of
+    a warrior asks anyway walks the bot through the range, and the jump is asked on the update in which the bot
+    stands inside it, because a bot that stopped at the edge of the range to cast would stand twenty yards from the
+    mob it is fighting and hit nothing.
+    The stance that the jump is allowed in is named by the rule rather than read from the spell, because what decides
+    it is the rage of a stance change: a bot that wears the Berserker Stance jumps where it stands, and a bot in the
+    Battle Stance or the Defensive Stance is changed only when a rank of `Tactical Mastery` keeps its rage through
+    the change. Without that talent the jump is not worth a change that the routine asks back a moment later, which
+    is the same reading that `Overpower` and the rest of the rotation carry. The two warriors answer the same answer
+    in their own way: `UpdateProtectionWarriorTankCombat()` casts the spell where the stance is worn and otherwise
+    switches to the Berserker Stance, which its own rule of the tank's stance takes back to the Defensive Stance on
+    the next update, and `CollectWarriorDamageWants()` carries the want into the rotation with the stance it wants
+    named, which is what makes the change and the spell paid for together.
     Whether a mob may be fought is not asked of `Unit::IsHostileTo()`, which reads the red name only: it is asked of
     `CombatBotBaseAI::IsValidHostileTarget()`, which is built on `WorldObject::IsValidAttackTarget()` and takes a
     yellow neutral that has joined the fight, as the area of effect of the core takes it. The yellow of a unit is
@@ -435,14 +467,16 @@ document and the code in step - it is what the maintainer reads to tune the valu
     talent the stance in which the abilities of a talent go off: a bot that keeps the Berserker Stance and a bot that
     has the Battle Stance back because it took Improved Overpower both use it where they stand.
     The order of the rotation is `CollectWarriorDamageWants()`, which writes the wants of the maintainer in their rank
-    and nothing else: `Berserker Rage` when a fear holds the bot in the Berserker Stance; the bank of a `Sweeping
+    and nothing else: `Berserker Rage` when a fear holds the bot in the Berserker Stance; the `Intercept` jump at a
+    mob that stands beyond a swing of the bot and inside the range of the spell, with the stance that the want names
+    and the rank of `Tactical Mastery` of the paragraph above; the bank of a `Sweeping
     Strikes` over a pack; `Overpower` in the Battle Stance; `Execute` below twenty per cent of the health of the mob;
     the interrupt; `Mortal Strike`; `Bloodthirst`; `Whirlwind`; then, for a bot that has neither of the two talent
     abilities and nothing else to spend its rage on, `Rend` and the stacks of `Sunder Armor` without a limit of
     stacks; and `Heroic Strike` of a bot that has no `Sunder Armor`. The shout of attack strength is asked for while
     the fight lasts and not only before it, because a party that has been fighting for a minute is a party that lost
     the shout on the way. What the list of the maintainer does not name is not asked: `Last Stand`, `Concussion Blow`,
-    `Intimidating Shout`, `Retaliation`, `Recklessness`, `Intercept`, `Disarm`, `Hamstring` and `Cleave` have no rule
+    `Intimidating Shout`, `Retaliation`, `Recklessness`, `Disarm`, `Hamstring` and `Cleave` have no rule
     there, and a damage warrior does not take the Defensive Stance because its own health went low. `Death Wish` is
     asked for at the elite that the client marks with a skull, `IsSkullConEliteTarget()`, the same reading the shield
     tank uses for its `Thunder Clap`: an elite frame a few levels above the bot is not what the burst of a warrior is
@@ -456,17 +490,27 @@ document and the code in step - it is what the maintainer reads to tune the valu
     never came. The armor debuff is the one spell of the rotation that adds a stack by being cast again while the mob
     still carries it, which is what the ordinary cast gate of the core refuses, so it goes through the forced cast that
     the shield tank uses for the same reason (`TryCastForcedWarriorSunder()`).
-    The two looks that an area of several mobs asks for are one read of the melee about the bot,
-    `ReadWarriorMeleePack()`: a neutral at peace that the area would wake into a second fight that the party did not
-    ask for, and a mob held by a control that damage breaks, which is the control that another party member is keeping.
-    Both of them stop a `Sweeping Strikes` and a `Whirlwind`; a neutral that has joined a fight of its own is in that
-    fight whatever the area does to it, and is no reason to hold a spell back. `PB_WARRIOR_MULTI_MOB_DIST` is the
+    The counts that an area of several mobs asks for are one read of the melee about the bot,
+    `ReadWarriorMeleePack()`: the red names of the pack, a neutral at peace that the area would wake into a second
+    fight that the party did not ask for, and a mob held by a control that damage breaks, which is the control that
+    another party member is keeping. The neutral and the held mob each stop a `Sweeping Strikes` and a `Whirlwind`;
+    a neutral that has joined a fight of its own is in that fight whatever the area does to it, and is no reason to
+    hold a spell back. `PB_WARRIOR_MULTI_MOB_DIST` is the
     radius of that read, and the red names in it are what a pack is; `PB_WARRIOR_WHIRLWIND_RAGE` is the fifty points
     of rage that a Whirlwind is asked for at rather than the cost of the spell, because half of a Whirlwind is a
     stance change spent on nothing; `PB_WARRIOR_PUMMEL_STANCE_RAGE_MIN` and `PB_WARRIOR_PUMMEL_STANCE_RAGE_MAX` bound
     the window of rage in which a bot that stands in the Battle Stance may leave it for an interrupt. All of those are
     values for the maintainer to tune; `PB_RAGE_PER_POINT` is the ratio between the points that those rules speak of
     and the rage of the core.
+    That read counts the mobs that a swing of this bot could really land on as well, and that count is the one a
+    `Sweeping Strikes` is asked at: `PB_WARRIOR_SWEEPING_STRIKE_TARGETS` of them, each within the reach of the
+    weapon of the bot as `Unit::CanReachWithMeleeAutoAttack()` measures it for its own auto attack, and each in the
+    arc that the bot faces, which `IsInFrontOfWarrior()` reads at `PB_WARRIOR_FRONT_HALF_ANGLE`. The core has no
+    test for the side that a character stands in because the client decides that, and the hit that a `Sweeping
+    Strikes` copies lands on the mobs that the swing itself could reach: the count of the red names about the
+    warrior let a bot with one mob in front of it and two behind spend its banked rage on a copy that had nothing to
+    hit, which is what the second count is for. A `Whirlwind` draws its area round the bot and is asked at the red
+    names of the pack as it was; the two numbers of the swing are for the maintainer to tune.
     The interrupt of a damage warrior stands below the abilities of its rotation rather than above them: the party
     loses less from a spell that the warrior was late to stop than from the hit that the same global cooldown would
     have bought. In the Berserker Stance `Pummel` is there for nothing; a bot that stands in the Battle Stance leaves
@@ -514,8 +558,9 @@ created new), defense rating, weapon skills.
   column layout and keep the CRLF endings.
 - `.partybot stance`, for the selected bot, prints what decides the stance of a warrior: the rules it is under
   (shield tank or damage, from the off hand item), the talent its gear is rated for, the form it wears, which of the
-  three stance spells its spellbook knows, the gates of the stance the rules ask for now, and the reason that the
-  last stance ask was refused (`TrySwitchWarriorStance()` records it in `m_warriorStanceBlock`). That is how a
+  three stance spells and the `Intercept` jump its spellbook knows, the gates of the stance the rules ask for now,
+  and the reason that the last stance ask was refused (`TrySwitchWarriorStance()` records it in
+  `m_warriorStanceBlock`). That is how a
   stance that never comes is told apart: a spell the bot has not learned, a gate that never clears, or a rule that
   was never reached.
   The command also says whether an opening of a charge still stands for a target and what it has spent waiting for
@@ -525,10 +570,13 @@ created new), defense rating, weapon skills.
   and whether Improved Overpower was taken - because nothing else about a bot says which of the two stances its rules
   should keep, and a bot between the level at which one is learned and the level at which the other is taken is a bot
   whose stance changes in the middle of its levels.
-  A stance listed as not known is a spell that was never taught, which is a question for the two spell syncs of
-  rule 13 and not for the stance rules, so the command also lists the quests of this world that would give such a
-  stance to a character of the class and race of the bot, with the minimum level and the class and race masks that
-  their rows of `quest_template` ask for, or the words that no quest gives it.
+  A stance or the `Intercept` jump listed as not known is a spell that was never taught, which is a question for the
+  spell syncs of rule 13 and not for the stance rules or the rotation, so the command also lists the quests of this
+  world that would give such a spell to a character of the class and race of the bot, with the minimum level and the
+  class and race masks that their rows of `quest_template` ask for, or the words that no quest gives it. `Intercept`
+  is asked for there because it is the other ability of a warrior that this world teaches with a class quest and not
+  with a trainer, and because a warrior that knows it at the level of that quest is the first thing that the two
+  rules of the jump ask for.
 - The talents that a bot can be summoned with are arguments of `.partybot add` and not sub commands of
   `src/game/Chat/Chat.cpp`: the list is `gearSpecAliases` in `BotGearScoring.cpp` and what every page means is in
   `BotGearScoring.md`. A new talent is a row in that list, with nothing to change in the command tables.
