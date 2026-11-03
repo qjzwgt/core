@@ -78,7 +78,8 @@ public:
     bool ShouldAutoRevive() const;
     bool GroupHasResurrection() const;
     void UpdateSpiritResurrection();
-    void WalkToCorpse(Corpse* pCorpse);
+    void WalkToCorpseReclaimPoint(Corpse* pCorpse);
+    bool IsCorpseReclaimPointSafe() const;
     float GetChaseDistance() const final;
     bool CanRunAwayFrom(Unit const* pEnemy) const;
     bool RunAwayFromTarget(Unit* pEnemy);
@@ -187,6 +188,13 @@ public:
     uint64 m_priestFortitudeBuffReadyAt = 0;
     uint64 m_shadowformDispelWaitUntil = 0;
     bool m_priestMindBlastOpener = false;
+
+    // The body whose bones the spirit of this bot is walking back to, and how far that walk has got: which of the
+    // sides of the bones the spirit is sent to, and how often a way has been asked for. They are for one body, and
+    // they are started over when the bot dies in another one.
+    ObjectGuid m_reclaimCorpseGuid;
+    uint32 m_reclaimStandTry = 0;
+    uint32 m_spiritWalkLegs = 0;
 };
 
 #endif

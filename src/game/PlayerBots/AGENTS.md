@@ -77,9 +77,12 @@ document and the code in step - it is what the maintainer reads to tune the valu
 7. The stat weights (the "1% of hit or critical strike is worth 20 points" table in `defaultGearStatWeights`) are
    a starting point that the maintainer tunes by playing. A weight that looks wrong is data to report, not a bug
    to fix silently.
-8. `PartyBot.SpiritResurrection`, off by default, says how a party bot that died outside a battleground comes
-   back. Off, the bot raises itself as soon as a player of the group stands by its corpse, which is what upstream
-   does. On, the bot stays by its unreleased body and waits to be raised while a living member of the group is to
+8. `PartyBot.SpiritResurrection`, on by default, says how a party bot that died outside a battleground comes back.
+   The default of on is a deliberate exception to the guideline of `README.md` that custom behaviour is off by
+   default: a bot that comes back the way a player does is wanted without a line of `mangosd.conf` written first,
+   and the option is there for a server that wants the behaviour of upstream instead. Off, the bot raises itself as
+   soon as a player of the group stands by its corpse, which is what upstream does. On, the bot stays by its
+   unreleased body and waits to be raised while a living member of the group is to
    be counted on to raise it: one that knows a spell with the resurrect effect, which is the test that
    `PopulateSpellData()` uses too, Rebirth excepted - a druid keeps Rebirth for an emergency, and it is the one
    resurrection that the core marks with `SPELL_ATTR_EX3_NO_RES_TIMER`, which is how it is recognised here rather
@@ -89,9 +92,17 @@ document and the code in step - it is what the maintainer reads to tune the valu
    is decided and accepted, Rebirth stays for the emergency it is meant for. Where nobody is to be counted on the
    body is released at once; outside an instance the release timer that the core gives a player releases it after
    six minutes, which is wanted - that is what a player who is left waiting does. The spirit then walks back to its
-   bones and takes the body back under the rules of `WorldSession::HandleReclaimCorpseOpcode`; a spirit whose
-   bones are in another copy of the map, or that no path reaches, is raised by the spirit healer through
-   `WorldSession::SendSpiritResurrect`. Neither of those paths applies the 2479 that the self-raising one does.
+   bones - to a place beside them rather than onto them, because a bot that is raised on its own corpse is raised in
+   the middle of the pack that killed it. The sides of the bones are tried from the one the spirit came to, and a
+   side is left when a creature stands there that would take the bot for an enemy from that place, which is the
+   aggro radius of `Creature::GetAttackDistance` with the hostility, the line of sight and the reachable ground that
+   `BasicAI::MoveInLineOfSight` asks for. The body is taken under the rules of `WorldSession::HandleReclaimCorpseOpcode`
+   from the first of those places that is free, and after all of them where the bot stands; the 25 yards of
+   `PB_RECLAIM_STAND_DISTANCE` are inside the 39 of `CORPSE_RECLAIM_RADIUS`, so the place is one the core allows.
+   A spirit whose bones are in another copy of the map, or that has asked for PB_SPIRIT_WALK_LEGS ways without the
+   walking coming to an end, is raised by the spirit healer through `WorldSession::SendSpiritResurrect` - not at the
+   first path that fails, which is how a bot came back at the graveyard the moment its release was made. Neither of
+   those paths applies the 2479 that the self-raising one does.
    The soulstone, the Twisting Nether and the Reincarnation of a bot stay with the core's own
    `Player::SelectResurrectionSpellId()`.
 9. The recovery of a bot that is out of combat follows a player. A bot sits down to eat and drink only once its

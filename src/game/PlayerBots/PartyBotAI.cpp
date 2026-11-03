@@ -31,6 +31,9 @@
 #include "Utilities/Random.h"
 #include "Corpse.h"
 #include "PathFinder.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 
 #include <algorithm>
 #include <ctime>
@@ -77,6 +80,25 @@ enum PartyBotSpells
 // The distance that a party bot steps back when it runs away, and the distance that it then keeps with the chase
 // generator, is the same on every kind of ground.
 #define PB_RUN_AWAY_DISTANCE 8.0f
+
+// Where the spirit of a bot takes its body back. Standing on the bones themselves stands the bot up in the middle
+// of whatever killed it, and a player that runs back for its body takes it from where it stopped, which the core
+// allows from anywhere inside CORPSE_RECLAIM_RADIUS of it. So the spirit is sent to PB_RECLAIM_STAND_DISTANCE from
+// the bones, at the side it came to first - that is the way out of the fight that killed the bot - and at the
+// sides around the bones after that: PB_RECLAIM_STAND_SIDES of them are asked, and past them the body is taken
+// where the bot stands. A place is given up when a creature that would reach the bot there stands on it, and
+// PB_RECLAIM_AGGRO_SEARCH is how far round the place such a creature is looked for - the detection range that
+// `Creature::GetDetectionRange` starts a creature at, with the MAX_LEVEL_DIFF_FOR_AGGRO_RANGE that a creature much
+// above the bot adds to it, which is the bound `Creature::SelectNearestHostileUnitInAggroRange` gives its own
+// search. A spirit that stands at the place it was sent to, and can take its body from there, waits there as a
+// player in front of its own bones does, and that waiting is not counted as walking. The walking is asked for
+// PB_SPIRIT_WALK_LEGS times in all, which is the guard for ground that the spirit can not walk over at all: the
+// spirit healer of the graveyard raises the bot then.
+#define PB_RECLAIM_STAND_DISTANCE 25.0f
+#define PB_RECLAIM_STAND_SIDES 8
+#define PB_RECLAIM_STAND_ARRIVED 3.0f
+#define PB_RECLAIM_AGGRO_SEARCH 45.0f
+#define PB_SPIRIT_WALK_LEGS 40
 
 bool PartyBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
@@ -480,34 +502,136 @@ bool PartyBotAI::GroupHasResurrection() const
     return false;
 }
 
-// Walk the spirit of the bot to the bones it left behind, and let the spirit healer of its graveyard raise it
-// when the bones are out of reach.
-void PartyBotAI::WalkToCorpse(Corpse* pCorpse)
+// A creature that would take the bot for an enemy if the bot stood up where its spirit has come to a stop. The
+// question is the one that `BasicAI::MoveInLineOfSight` answers when a creature of the open world sees a player
+// walk into its range, with the aggro radius of `Creature::GetAttackDistance`, the same hostility, the same line
+// of sight and the same ground the creature can walk on. The bot is asked as the living character that it becomes
+// when it takes its body back, because at the moment of the question it is a spirit, and a spirit is nothing that
+// a creature attacks.
+class ReclaimPointAggroCheck
+{
+public:
+    explicit ReclaimPointAggroCheck(Player* pBot) : m_pBot(pBot) {}
+
+    bool operator()(Unit* pUnit)
+    {
+        Creature const* pCreature = pUnit->ToCreature();
+        if (!pCreature)
+            return false;
+
+        // A creature that can not start a fight of its own pulls nothing when the bot stands up: a passive or a
+        // tame one, a stunned one, one that the data does not let attack. A creature that is fighting is not pulled
+        // either, but the bot would stand in that fight all the same, so it answers for a place that is not safe.
+        if (!pCreature->CanInitiateAttack() || pCreature->IsInCombat())
+            return false;
+
+        // `checkAlive` is off because the bot is a spirit here and the answer is wanted for the body that it is
+        // about to take.
+        if (!m_pBot->IsTargetableBy(pCreature, false, false))
+            return false;
+
+        if (!pCreature->IsHostileTo(m_pBot))
+            return false;
+
+        // The creature on the ledge above does not reach the bot that stands below it, which is how the core reads
+        // the same question.
+        if (pCreature->GetDistanceZ(m_pBot) > CREATURE_Z_ATTACK_RANGE)
+            return false;
+
+        float const aggroRange = pCreature->GetAttackDistance(m_pBot);
+        if (aggroRange <= 0.0f)
+            return false;
+
+        return pCreature->IsWithinDistInMap(m_pBot, aggroRange, true, SizeFactor::None) &&
+            pCreature->IsWithinLOSInMap(m_pBot) &&
+            m_pBot->IsInAccessablePlaceFor(pCreature);
+    }
+
+private:
+    Player* m_pBot;
+};
+
+// True when nothing that would take the bot for an enemy reaches the place where its spirit stands, which is a
+// place it can take its body back from without the pack that killed it coming over again.
+bool PartyBotAI::IsCorpseReclaimPointSafe() const
+{
+    ReclaimPointAggroCheck check(me);
+
+    Unit* pReaching = nullptr;
+    MaNGOS::UnitSearcher<ReclaimPointAggroCheck> searcher(pReaching, check);
+    Cell::VisitAllObjects(me, searcher, PB_RECLAIM_AGGRO_SEARCH);
+
+    return !pReaching;
+}
+
+// Walk the spirit of the bot towards the bones it left behind, to a place beside them rather than onto them, and
+// let the spirit healer of its graveyard raise the bot when no ground to the bones can be walked at all.
+void PartyBotAI::WalkToCorpseReclaimPoint(Corpse* pCorpse)
 {
     // A point movement that has been launched walks on its own, so it is launched again only once it is over.
     if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
         return;
 
-    float const x = pCorpse->GetPositionX();
-    float const y = pCorpse->GetPositionY();
-    float const z = pCorpse->GetPositionZ();
-
-    bool const reachable = pCorpse->GetMapId() == me->GetMapId() && pCorpse->GetInstanceId() == me->GetInstanceId();
-    if (reachable)
+    // The bones in another copy of the map are out of reach for the spirit, and the spirit healer raises the bot
+    // there, as it does for a player whose body lies in an instance that the spirit was released in.
+    if (pCorpse->GetMapId() != me->GetMapId() || pCorpse->GetInstanceId() != me->GetInstanceId())
     {
-        // The path is asked for before the walk because a spline without one would walk through the geometry.
-        PathFinder path(me);
-        path.calculate(x, y, z);
-
-        if (!(path.getPathType() & PATHFIND_NOPATH))
-        {
-            me->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING);
-            return;
-        }
+        if (WorldSession* pSession = me->GetSession())
+            pSession->SendSpiritResurrect();
+        return;
     }
 
-    if (WorldSession* pSession = me->GetSession())
-        pSession->SendSpiritResurrect();
+    // The walking of a spirit is not endless either: a bot whose bones are behind ground it can not walk over is
+    // raised by the spirit healer rather than left standing at the graveyard for the rest of the session.
+    if (m_spiritWalkLegs >= PB_SPIRIT_WALK_LEGS)
+    {
+        if (WorldSession* pSession = me->GetSession())
+            pSession->SendSpiritResurrect();
+        return;
+    }
+
+    // The side of the bones that the spirit came to is the first one asked for: it is the way out of the fight
+    // that killed the bot, and it is the ground that the bot has seen walked on its way to the graveyard. The
+    // sides after that turn around the bones, so a bot that is asked for a place again has the whole of them.
+    float const angle = pCorpse->GetAngle(me) +
+        (float(m_reclaimStandTry % PB_RECLAIM_STAND_SIDES) * 2.0f * M_PI_F) / float(PB_RECLAIM_STAND_SIDES);
+
+    float standX = 0.0f;
+    float standY = 0.0f;
+    pCorpse->GetNearPoint2D(standX, standY, PB_RECLAIM_STAND_DISTANCE, angle);
+
+    // The ground of that place, so that the way is asked for on the ground and not through a wall or down a cliff.
+    // Where the map answers with no ground at all the height of the bones is kept, and the pathfinder gives the
+    // answer for that place.
+    float standZ = pCorpse->GetPositionZ();
+    me->UpdateGroundPositionZ(standX, standY, standZ);
+
+    // A spirit that stands at the place it was sent to, and can take its body from there, waits there rather than
+    // walking it again: a body is not worth taking the moment the spirit stands by it, and the reclaim delay of a
+    // player runs in the meantime, which is what a player in front of its own bones does. The reclaim radius of the
+    // core is a three-dimensional one, so the bot that stands too high above or below its bones to reach them from
+    // there is not waiting: it is walking, and it is counted as such.
+    if (pCorpse->IsWithinDistInMap(me, CORPSE_RECLAIM_RADIUS, true) &&
+        me->GetDistance(standX, standY, standZ, SizeFactor::None) < PB_RECLAIM_STAND_ARRIVED)
+        return;
+
+    // The path is asked for before the walk because a spline without one would walk through the geometry. A place
+    // that answers with no way - behind a wall, over a cliff, across water the way round does not reach - is
+    // turned over like an unsafe one, so that the sides of the bones the bot can walk to are the sides it uses.
+    // The spirit healer is asked only when the walking has been asked for often enough to say that the ground
+    // between the graveyard and the bones can not be walked over at all.
+    PathFinder path(me);
+    path.calculate(standX, standY, standZ);
+
+    ++m_spiritWalkLegs;
+
+    if (path.getPathType() & PATHFIND_NOPATH)
+    {
+        ++m_reclaimStandTry;
+        return;
+    }
+
+    me->GetMotionMaster()->MovePoint(0, standX, standY, standZ, MOVE_PATHFINDING);
 }
 
 // A party that goes down over a ledge goes down together. The leader of a party is a player that jumps, so the bot
@@ -665,17 +789,37 @@ void PartyBotAI::UpdateSpiritResurrection()
         return;
     }
 
+    // The sides of the bones and the walking to them belong to one body, so another death - or a body that the
+    // core has moved to another copy of the map - is started over.
+    if (m_reclaimCorpseGuid != pCorpse->GetObjectGuid())
+    {
+        m_reclaimCorpseGuid = pCorpse->GetObjectGuid();
+        m_reclaimStandTry = 0;
+        m_spiritWalkLegs = 0;
+    }
+
     // Taking ones own body back follows the same rules as for a player, see WorldSession::HandleReclaimCorpseOpcode:
     // the spirit must stand by the bones, and the body must have lain there long enough to be worth taking.
     if (pCorpse->IsWithinDistInMap(me, CORPSE_RECLAIM_RADIUS, true) &&
         pCorpse->GetGhostTime() + me->GetCorpseReclaimDelay(pCorpse->GetType() == CORPSE_RESURRECTABLE_PVP) <= time(nullptr))
     {
-        me->ResurrectPlayer(0.5f);
-        me->SpawnCorpseBones();
-        return;
+        // The pack that killed the bot often stands on its bones, and a bot that is raised in the middle of that
+        // pack is back in the fight before its resurrection sickness has done anything, which is just what the
+        // party hoped to avoid by letting the body go. So the body is taken only where nothing reaches the bot:
+        // where it does, the spirit steps to the next side of the bones and asks again there. Once all the sides
+        // have been asked, the body is taken where the bot stands, as a player that wants its body back does.
+        if (IsCorpseReclaimPointSafe() || m_reclaimStandTry >= PB_RECLAIM_STAND_SIDES)
+        {
+            me->ResurrectPlayer(0.5f);
+            me->SpawnCorpseBones();
+            m_reclaimCorpseGuid.Clear();
+            return;
+        }
+
+        ++m_reclaimStandTry;
     }
 
-    WalkToCorpse(pCorpse);
+    WalkToCorpseReclaimPoint(pCorpse);
 }
 
 bool PartyBotAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const
