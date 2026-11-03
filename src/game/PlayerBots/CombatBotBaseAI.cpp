@@ -229,7 +229,8 @@ void CombatBotBaseAI::PopulateSpellData()
             continue;
 
         // Tactical Mastery is a passive talent, but its rank decides which stance the
-        // shield tank may leave for Mocking Blow and Thunder Clap.
+        // shield tank may leave for the Thunder Clap. The emergency grab of the
+        // tank is not held to that rank, whatever the talent says.
         if (me->GetClass() == CLASS_WARRIOR &&
             pSpellEntry->SpellName[0] == "Tactical Mastery" &&
             (!m_spells.warrior.pTacticalMastery ||

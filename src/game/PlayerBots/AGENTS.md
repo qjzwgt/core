@@ -304,11 +304,18 @@ document and the code in step - it is what the maintainer reads to tune the valu
     which takes Battle Stance with the charge and keeps the target through it, and the rotation of the tank brings
     the Defensive Stance back on the next update.
     `UpdateProtectionWarriorTankCombat()` and `UpdateOutOfCombatAI_Warrior()` are the only owners of the stance of a
-    shield tank: the taunt fallback casts `Taunt` and `Mocking Blow` in the stance the bot is wearing, which is the
-    stance rule of those spells as the cast gate of the bot applies it, asks for the chase of a target that is out of
-    melee reach, and answers false so that the rotation still runs. Where a second owner asked for another stance,
-    the Defensive Stance was taken away on one update and asked back on the next, both updates stopped at the stance,
-    and a shield tank stayed in the stance of its charge without a Taunt or a Sunder Armor.
+    shield tank: the taunt fallback casts `Taunt`, asks for the chase of a target that is out of melee reach, and
+    answers false so that the rotation still runs. Where a second owner asked for another stance, the Defensive
+    Stance was taken away on one update and asked back on the next, both updates stopped at the stance, and a shield
+    tank stayed in the stance of its charge without a Taunt or a Sunder Armor. `Mocking Blow` belongs to Battle
+    Stance, so that fallback does not cast it either: the spell is a trigger of the rotation, next to the Thunder
+    Clap, which makes the stance switch that the spell needs and takes the Defensive Stance back on its own update
+    afterwards. The trigger carries the caution that the long cooldown of the spell asks for: `Taunt` must be on its
+    own cooldown, the tank must hold the spell and the rage for it, and the mob must really be at the party member -
+    `Unit::CanReachWithMeleeAutoAttack()` of either side of that fight says so, and a mob that is still running
+    across the room is a mob that the tank walks to and takes with its rotation. Unlike the Thunder Clap, the grab
+    is not held to the Tactical Mastery rank that makes an extra stance switch worth its rage: the party member is
+    lost while the tank waits for a talent.
     A mob that beats another party member is a mob that the tank is to take, not to fight: the tank goes to it, keeps
     it with the ordinary rotation and with its taunts, and goes back to the target it was holding when its hold is
     full - `PB_WARRIOR_SECONDARY_HOLD_MS`, six seconds, a value for the maintainer to tune when the mobs are seen to

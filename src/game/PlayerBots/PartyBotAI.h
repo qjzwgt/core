@@ -104,6 +104,8 @@ public:
     bool TryContinueWarriorCharge();
     bool UpdateProtectionWarriorTankTarget();
     bool TryTauntProtectionWarriorTarget(Unit* pTarget);
+    bool HasWarriorMockingBlowReady() const;
+    bool IsWarriorMockingBlowWanted(Unit const* pTarget) const;
     void UpdateProtectionWarriorTankCombat();
     bool TrySwitchWarriorStance(SpellEntry const* pStance);
     void PrintWarriorStanceState(ChatHandler& handler) const;

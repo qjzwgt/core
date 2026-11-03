@@ -1662,6 +1662,38 @@ Unit* PartyBotAI::SelectProtectionWarriorSecondaryTarget(Unit const* pPrimaryTar
     return nullptr;
 }
 
+// Whether the emergency grab of the shield tank is in hand: learned, off its cooldown, and paid for. The tank is
+// asked to hold a little rage above its cost, because the grab is worth a stance change, and a cast that the tank
+// cannot pay for is no help to the party member that waits for it.
+bool PartyBotAI::HasWarriorMockingBlowReady() const
+{
+    return m_spells.warrior.pMockingBlow &&
+        me->IsSpellReady(m_spells.warrior.pMockingBlow) &&
+        me->GetPower(POWER_RAGE) > 10 * PB_RAGE_PER_POINT;
+}
+
+// Whether the mob the tank is attacking is asking for that grab. Taunt is the tool of an ordinary grab, so the
+// emergency is only open while Taunt is on its cooldown, and the grab is only spent once the mob is really at the
+// party member: `Unit::CanReachWithMeleeAutoAttack` is the reach test that the core puts in front of its own auto
+// attack, so a mob that is still running across the room is not reached, and the tank walks to that mob and takes
+// it with its rotation instead of with the one spell that a long cooldown allows. Either side of that reach is
+// asked for, because a mob that beats a party member from the far side of a ledge is reached by the member who
+// swings at it.
+bool PartyBotAI::IsWarriorMockingBlowWanted(Unit const* pTarget) const
+{
+    if (!HasWarriorMockingBlowReady())
+        return false;
+
+    Unit const* pMember = pTarget ? pTarget->GetVictim() : nullptr;
+    if (!IsOtherPartyMember(pMember))
+        return false;
+
+    if (m_spells.warrior.pTaunt && me->IsSpellReady(m_spells.warrior.pTaunt))
+        return false;
+
+    return pTarget->CanReachWithMeleeAutoAttack(pMember) || pMember->CanReachWithMeleeAutoAttack(pTarget);
+}
+
 bool PartyBotAI::TryTauntProtectionWarriorTarget(Unit* pTarget)
 {
     if (!pTarget || !IsOtherPartyMember(pTarget->GetVictim()))
@@ -1678,24 +1710,18 @@ bool PartyBotAI::TryTauntProtectionWarriorTarget(Unit* pTarget)
     if (m_spells.warrior.pTaunt && me->IsSpellReady(m_spells.warrior.pTaunt))
         return false;
 
-    bool const canMock = me->GetPower(POWER_RAGE) > 10 * PB_RAGE_PER_POINT &&
-        m_spells.warrior.pMockingBlow &&
-        me->IsSpellReady(m_spells.warrior.pMockingBlow);
-    // Mocking Blow is asked for in the stance that the tank is standing in: the cast gate of the bot applies the
-    // stance rule that the spell itself carries, so a stance change is not something this fallback can decide, and
-    // the stance of the tank belongs to PartyBotAI::UpdateProtectionWarriorTankCombat and to the out of combat
-    // routine of the warrior, which are the only two places that decide it. An ask here takes the Defensive Stance
-    // away on one update and asks for it back on the next, both updates stop at the stance, and the rotation of the
-    // tank - Revenge, Shield Block, Shield Slam, Sunder Armor - is never reached while this fallback is answering
-    // for a target that hits another party member.
-    if (canMock && me->CanReachWithMeleeAutoAttack(pTarget) &&
-        CanTryToCastSpell(pTarget, m_spells.warrior.pMockingBlow) &&
-        DoCastSpell(pTarget, m_spells.warrior.pMockingBlow) == SPELL_CAST_OK)
-        return true;
+    // Mocking Blow is not cast here. It belongs to Battle Stance, and the stance of a shield tank is decided by
+    // PartyBotAI::UpdateProtectionWarriorTankCombat() in combat, the warrior routine out of it. An ask from this
+    // fallback took the Defensive Stance away on one update and asked it back on the next, both updates stopped
+    // at the stance, and the rotation of the tank - Revenge, Shield Block, Shield Slam, Sunder Armor - was never
+    // reached while the fallback answered for a mob that beats another party member. The grab is asked for in that
+    // rotation instead, at PartyBotAI::IsWarriorMockingBlowWanted, where the switch that the spell needs is the
+    // switch that the rotation already knows how to make and to take back.
+    bool const canMock = HasWarriorMockingBlowReady();
 
     // A target out of melee reach is chased, but the answer stays false: the caller then runs the rotation of the
-    // tank, which follows the same target at its end and is the only place that puts the bot into Defensive
-    // Stance. Stopping the update here was what kept a shield tank in the stance of its charge.
+    // tank, which follows the same target at its end and is the place that decides the stance of the bot. Stopping
+    // the update here was what kept a shield tank in the stance of its charge.
     if (canMock &&
         !me->CanReachWithMeleeAutoAttack(pTarget) &&
         me->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
@@ -4552,13 +4578,17 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         me->IsSpellReady(m_spells.warrior.pThunderClap) &&
         !pVictim->IsImmuneToSpell(m_spells.warrior.pThunderClap, false);
 
+    bool const needMockingBlow = IsWarriorMockingBlowWanted(pVictim);
+
     // Thunder Clap is done in Battle Stance when Tactical Mastery keeps enough
     // rage to make the extra switch worthwhile. Every ordinary skill stays in
-    // Defensive Stance.
+    // Defensive Stance. The emergency grab is not held to that talent rule: a Thunder Clap pays for its stance over
+    // the whole of a fight, while a mob that beats a party member is lost while the tank waits for a talent.
     bool const needBattleStance =
-        needThunderClap &&
-        (me->GetShapeshiftForm() == FORM_BATTLESTANCE ||
-         GetTacticalMasteryRank() >= 4);
+        needMockingBlow ||
+        (needThunderClap &&
+         (me->GetShapeshiftForm() == FORM_BATTLESTANCE ||
+          GetTacticalMasteryRank() >= 4));
 
     if (needBattleStance)
     {
@@ -4584,6 +4614,18 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         CanTryToCastSpell(pVictim, m_spells.warrior.pThunderClap))
     {
         if (DoCastSpell(pVictim, m_spells.warrior.pThunderClap) == SPELL_CAST_OK)
+            return;
+    }
+
+    // The same holds for the emergency grab: the Battle Stance was switched to for this spell, and the rage that the
+    // switch cost is spent on the grab. The cast gate carries the stance rule that the spell itself carries, so a
+    // Mocking Blow that is allowed in the stance of the tank is cast without waiting for a switch, and one that is
+    // not is cast on the update in which the switch has been made. The taunt fallback does not wait for any of it,
+    // and the next update of the rotation asks the Defensive Stance back by itself, since this trigger is answered
+    // as soon as the spell is on its cooldown.
+    if (needMockingBlow && CanTryToCastSpell(pVictim, m_spells.warrior.pMockingBlow))
+    {
+        if (DoCastSpell(pVictim, m_spells.warrior.pMockingBlow) == SPELL_CAST_OK)
             return;
     }
 
