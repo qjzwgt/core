@@ -112,6 +112,9 @@ public:
     bool TryCastForcedWarriorSunder(Unit* pTarget);
     Unit* SelectProtectionWarriorSecondaryTarget(Unit const* pPrimaryTarget) const;
     bool HasThunderClapDebuff(Unit const* pTarget) const;
+    bool IsSkullConEliteTarget(Unit const* pTarget) const;
+    bool HasDemoralizingShoutDebuff(Unit const* pTarget) const;
+    bool HasWakingNeutralNear(Unit const* pCenter, float radius) const;
     uint32 GetTacticalMasteryRank() const;
     bool IsTargetedByHostile() const;
     Unit* SelectDispelTargetWithPet(SpellEntry const* pSpellEntry) const;
@@ -168,6 +171,11 @@ public:
     // update in which a swing of the bot could really land on that mob, so a run to it, a control of the bot or a
     // walk out of reach does not spend it. It is armed when the mob is taken, at PB_WARRIOR_SECONDARY_HOLD_MS.
     ShortTimeTracker m_warriorSecondaryHoldTimer;
+    // Whether the opening of a charge may spend one Thunder Clap on the pack around its target. A charge is only
+    // cast in Battle Stance, so the tank that charged already stands in the stance that the clap of the pack needs,
+    // and the mobs of that pack are at their closest in the seconds after the charge. The ask is one spell long: it
+    // is answered when the clap is cast, and it is over when the tank stands in another stance again.
+    bool m_warriorChargeOpeningThunderClap = false;
 
     // Why the last stance that this bot asked for is not the form that it wears. The stance of a warrior is
     // decided in one place, so the last ask and the reason of it are enough to read what a bot is doing; they

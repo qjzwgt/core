@@ -60,6 +60,24 @@ enum PartyBotSpells
 // the maintainer extends this when the mobs are seen to go back to the party member too soon.
 #define PB_WARRIOR_SECONDARY_HOLD_MS 6000
 
+// How far a shield tank looks, before it lets off a shout, for a neutral that the shout would bring into the
+// fight. The shout of the warrior is centred on the tank, and this look is kept wider than that area on purpose,
+// as the maintainer asks: a neutral that stands at peace one step outside the shout is a neutral that will be
+// inside it a moment later, and the shout is not worth the extra fight that it brings.
+#define PB_WARRIOR_SHOUT_NEUTRAL_WATCH_DIST 10.0f
+
+// The Thunder Clap of a shield tank is asked for in two cases. The opening of a charge may spend one clap on the
+// pack of red-name mobs about its target, which is the number below, because that clap puts the first threat on
+// every mob that is coming. Before that clap the tank looks for a neutral at peace within the area that the clap
+// covers, the yards below, because the debuff of the clap would wake such a neutral into a second fight that the
+// tank did not ask for. An elite keeps the debuff of the clap always, because the debuff takes attack power off
+// the mob that hits the tank; the number of levels below is what the client shows as the skull of a boss. All of
+// these are values for the maintainer: the core takes the area that the spell of the clap really covers from its
+// own spell data, which is not read here.
+#define PB_WARRIOR_THUNDER_CLAP_PACK_COUNT 3
+#define PB_WARRIOR_THUNDER_CLAP_LEVEL_GAP 3
+#define PB_WARRIOR_THUNDER_CLAP_NEUTRAL_WATCH_DIST 8.0f
+
 // What is taken for a ledge that a player jumps down instead of walking around: the leader stands that much lower
 // than the bot and that close by, and the pathfinder of the follow generator has no way down to offer. The ground
 // to land on is looked for along the line from the bot to its leader, in steps of PB_DROP_STEP_LAND_DIST, and it
@@ -1295,7 +1313,17 @@ bool PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
     }
 
     m_warriorChargeTargetGuid.Clear();
-    return DoCastSpell(pTarget, pCharge) == SPELL_CAST_OK;
+    if (DoCastSpell(pTarget, pCharge) != SPELL_CAST_OK)
+        return false;
+
+    // A charge is only cast in Battle Stance, so the tank that charged stands in the stance that a Thunder Clap
+    // would otherwise have to change to. The pack around the target is at its closest in the seconds after the
+    // charge, and the area of the clap puts the first threat on every mob that is coming; the rotation of the tank
+    // is told that this opening may spend one clap, and the ask is over with the Battle Stance of the charge.
+    if (IsProtectionWarriorTank())
+        m_warriorChargeOpeningThunderClap = true;
+
+    return true;
 }
 
 bool PartyBotAI::TryContinueWarriorCharge()
@@ -1339,6 +1367,68 @@ bool PartyBotAI::HasThunderClapDebuff(Unit const* pTarget) const
     {
         if (holder.second &&
             holder.second->GetSpellProto()->IsFitToFamily<SPELLFAMILY_WARRIOR, CF_WARRIOR_THUNDER_CLAP>())
+            return true;
+    }
+
+    return false;
+}
+
+// Whether the mob already carries the attack-power debuff of Demoralizing Shout. The family of the spell is asked
+// for besides the rank that the bot knows, because the debuff of another rank of that spell is the same debuff.
+bool PartyBotAI::HasDemoralizingShoutDebuff(Unit const* pTarget) const
+{
+    if (!pTarget)
+        return false;
+
+    if (m_spells.warrior.pDemoralizingShout && pTarget->HasAura(m_spells.warrior.pDemoralizingShout->Id))
+        return true;
+
+    for (auto const& holder : pTarget->GetSpellAuraHolderMap())
+    {
+        if (holder.second &&
+            holder.second->GetSpellProto()->IsFitToFamily<SPELLFAMILY_WARRIOR, CF_WARRIOR_DEMORALIZING_SHOUT>())
+            return true;
+    }
+
+    return false;
+}
+
+// Whether the mob that the tank holds is an elite far enough above the bot to be the skull that the client shows
+// for a boss. The debuff of a Thunder Clap takes attack power off such a mob, which is the cheaper defence for a
+// tank than the armor that the same rage would buy.
+bool PartyBotAI::IsSkullConEliteTarget(Unit const* pTarget) const
+{
+    if (!pTarget)
+        return false;
+
+    Creature const* pCreature = pTarget->ToCreature();
+    return pCreature && pCreature->IsElite() &&
+        pTarget->GetLevel() >= me->GetLevel() + PB_WARRIOR_THUNDER_CLAP_LEVEL_GAP;
+}
+
+// Whether a neutral stands at peace within the area of one of the spells of the tank, looked for about the point
+// pCenter. A neutral that is not in the fight yet is woken by the debuff of such a spell and joins it, which is a
+// fight that the tank did not ask for; a neutral that is fighting already, or whose faction data makes it hostile
+// to the bot, is in that fight whatever the spell does to it, so it is no reason to hold the spell back. The
+// reaction of a mob is what its faction and the reputation of the bot say, and a fight does not change it, so the
+// fight itself is what tells a neutral that is already engaged from one that a spell would engage. Only the units
+// that the spell could really reach are looked at: the gate of the bot for a target is the gate that the area of
+// effect of the core puts in front of its own targets, and the reaction of the bot is the one that the client
+// colours yellow.
+bool PartyBotAI::HasWakingNeutralNear(Unit const* pCenter, float radius) const
+{
+    std::list<Unit*> nearbyUnits;
+    me->GetEnemyListInRadiusAround(pCenter, radius, nearbyUnits);
+
+    for (Unit* pUnit : nearbyUnits)
+    {
+        // The yellow name is the reaction of the bot, which is what the client colours, and a player that wears one
+        // in a neutral town is not a mob that a spell would wake. A creature that is in a fight already is in it
+        // whatever the spell does to it, and a creature that the faction data makes hostile wears a red name.
+        if (!pUnit->IsCreature() || !IsValidHostileTarget(pUnit) || pUnit->IsInCombat())
+            continue;
+
+        if (me->GetReactionTo(pUnit) == REP_NEUTRAL)
             return true;
     }
 
@@ -4563,32 +4653,60 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         CanTryToCastSpell(me, m_spells.warrior.pShieldWall))
         DoCastSpell(me, m_spells.warrior.pShieldWall);
 
-    std::list<Unit*> nearbyEnemies;
-    me->GetEnemyListInRadiusAround(pVictim, 10.0f, nearbyEnemies);
-    uint8 hostileEnemyCount = 0;
-    for (Unit* pEnemy : nearbyEnemies)
-        if (pEnemy && me->IsHostileTo(pEnemy) && IsValidHostileTarget(pEnemy))
-            ++hostileEnemyCount;
-
-    bool const needThunderClap =
-        hostileEnemyCount > 2 &&
-        !HasThunderClapDebuff(pVictim) &&
-        me->GetPower(POWER_RAGE) > 20 * PB_RAGE_PER_POINT &&
-        m_spells.warrior.pThunderClap &&
-        me->IsSpellReady(m_spells.warrior.pThunderClap) &&
-        !pVictim->IsImmuneToSpell(m_spells.warrior.pThunderClap, false);
+    // The opening of a charge asked for nothing but the charge, and the Battle Stance of that opening is what the
+    // Thunder Clap of the pack is asked in. The ask is over as soon as the tank stands in another stance: the
+    // rotation asks the Defensive Stance back when it has nothing left to cast in this one, and the opening of a
+    // fight is not repeated.
+    if (m_warriorChargeOpeningThunderClap && me->GetShapeshiftForm() != FORM_BATTLESTANCE)
+        m_warriorChargeOpeningThunderClap = false;
 
     bool const needMockingBlow = IsWarriorMockingBlowWanted(pVictim);
 
-    // Thunder Clap is done in Battle Stance when Tactical Mastery keeps enough
-    // rage to make the extra switch worthwhile. Every ordinary skill stays in
-    // Defensive Stance. The emergency grab is not held to that talent rule: a Thunder Clap pays for its stance over
-    // the whole of a fight, while a mob that beats a party member is lost while the tank waits for a talent.
-    bool const needBattleStance =
-        needMockingBlow ||
-        (needThunderClap &&
-         (me->GetShapeshiftForm() == FORM_BATTLESTANCE ||
-          GetTacticalMasteryRank() >= 4));
+    // What the two rules of the clap have in common: the spell, its cooldown, the rage for its cost and for the
+    // stance change, and a target that the spell is not refused by.
+    bool const canPayThunderClap =
+        m_spells.warrior.pThunderClap &&
+        me->IsSpellReady(m_spells.warrior.pThunderClap) &&
+        me->GetPower(POWER_RAGE) >= 20 * PB_RAGE_PER_POINT &&
+        !pVictim->IsImmuneToSpell(m_spells.warrior.pThunderClap, false);
+
+    // The opening of a charge is the one case that asks how many mobs are coming, and the count is only walked
+    // while that opening is still asking. The red name is the filter of the count, as the maintainer asks, because
+    // the mobs of that pack are the ones that the tank is about to hold.
+    // The same opening looks for a neutral at peace within the area that the clap covers, and holds the clap back
+    // when one is there, because the debuff of the clap would wake it into a second fight that the tank did not ask
+    // for. A neutral that is fighting already is in that fight whatever the clap does to it, so it is no reason to
+    // hold the clap back, and it is not counted by the red-name filter either: the pack of three is the pack of
+    // mobs that the tank goes to hold. That look is asked at both of the points about which the core may draw the
+    // area of a spell of this kind, the tank and its target, because which of the two a spell uses is in the spell
+    // data of the running patch and not here; a neutral that the clap could wake at either point is reason enough
+    // to hold it back. The look for neutrals is asked after the pack is counted because it walks the cells of the
+    // map again, and the pack of three is the rarer answer of the two.
+    bool needOpeningThunderClap = false;
+    if (m_warriorChargeOpeningThunderClap && canPayThunderClap)
+    {
+        std::list<Unit*> nearbyEnemies;
+        me->GetEnemyListInRadiusAround(pVictim, 10.0f, nearbyEnemies);
+        uint8 redNamePackCount = 0;
+        for (Unit* pEnemy : nearbyEnemies)
+            if (pEnemy && me->IsHostileTo(pEnemy) && IsValidHostileTarget(pEnemy))
+                ++redNamePackCount;
+
+        needOpeningThunderClap = redNamePackCount >= PB_WARRIOR_THUNDER_CLAP_PACK_COUNT &&
+            !HasWakingNeutralNear(pVictim, PB_WARRIOR_THUNDER_CLAP_NEUTRAL_WATCH_DIST) &&
+            !HasWakingNeutralNear(me, PB_WARRIOR_THUNDER_CLAP_NEUTRAL_WATCH_DIST);
+    }
+
+    bool const needThunderClap = canPayThunderClap &&
+        (needOpeningThunderClap ||
+         (IsSkullConEliteTarget(pVictim) && !HasThunderClapDebuff(pVictim)));
+
+    // The clap is asked for in Battle Stance, and the tank is brought back to the Defensive Stance by the rule of
+    // that stance on the next update, when the clap has been cast or has stopped asking. Neither rule is held to
+    // the rank of a talent that keeps rage through a stance change: the charge left the tank in the stance that the
+    // clap needs, and the mob whose swings the debuff of the clap lowers is not waited for. Every ordinary skill
+    // of the tank stays in Defensive Stance.
+    bool const needBattleStance = needMockingBlow || needThunderClap;
 
     if (needBattleStance)
     {
@@ -4614,7 +4732,10 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         CanTryToCastSpell(pVictim, m_spells.warrior.pThunderClap))
     {
         if (DoCastSpell(pVictim, m_spells.warrior.pThunderClap) == SPELL_CAST_OK)
+        {
+            m_warriorChargeOpeningThunderClap = false;
             return;
+        }
     }
 
     // The same holds for the emergency grab: the Battle Stance was switched to for this spell, and the rage that the
@@ -4648,6 +4769,26 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         CanTryToCastSpell(pVictim, m_spells.warrior.pShieldSlam))
     {
         if (DoCastSpell(pVictim, m_spells.warrior.pShieldSlam) == SPELL_CAST_OK)
+            return;
+    }
+
+    // Demoralizing Shout outranks Sunder Armor here, as the maintainer orders: the debuff of the shout lowers
+    // the damage that the whole party takes, and it is worth more than one more stack of Sunder Armor on a mob
+    // that has no shout on it yet. The number of mobs nearby is no condition, because one mob holding the debuff
+    // is the whole of the point, and the only thing that stops the shout is a neutral at peace within its reach,
+    // which the shout would wake into the fight. The shout is let off at the tank itself, as Battle Shout is,
+    // because the area of the spell is the tank and the cast gate would otherwise look for a range that the spell
+    // does not have. Nothing here asks for a stance: the stance rule of the spell is applied by the cast gate, and
+    // a shout that a stance forbids is left to the stance that the tank stands in. The readiness of the spell is
+    // looked at before the mobs around the tank are, because the walk of that look is not worth spending while the
+    // cooldown of the shout is running.
+    if (m_spells.warrior.pDemoralizingShout &&
+        me->IsSpellReady(m_spells.warrior.pDemoralizingShout) &&
+        !HasDemoralizingShoutDebuff(pVictim) &&
+        !HasWakingNeutralNear(me, PB_WARRIOR_SHOUT_NEUTRAL_WATCH_DIST) &&
+        CanTryToCastSpell(me, m_spells.warrior.pDemoralizingShout))
+    {
+        if (DoCastSpell(me, m_spells.warrior.pDemoralizingShout) == SPELL_CAST_OK)
             return;
     }
 

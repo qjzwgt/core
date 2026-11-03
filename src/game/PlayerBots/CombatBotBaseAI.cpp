@@ -228,9 +228,10 @@ void CombatBotBaseAI::PopulateSpellData()
         if (!pSpellEntry)
             continue;
 
-        // Tactical Mastery is a passive talent, but its rank decides which stance the
-        // shield tank may leave for the Thunder Clap. The emergency grab of the
-        // tank is not held to that rank, whatever the talent says.
+        // Tactical Mastery is a passive talent, and its rank is what the tank
+        // keeps of its rage through a stance change. The rules of the tank do not
+        // wait for that rank any more, but `.partybot stance' prints it: the rank
+        // says why a stance change left the tank with nothing to cast.
         if (me->GetClass() == CLASS_WARRIOR &&
             pSpellEntry->SpellName[0] == "Tactical Mastery" &&
             (!m_spells.warrior.pTacticalMastery ||

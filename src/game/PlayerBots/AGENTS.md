@@ -313,9 +313,29 @@ document and the code in step - it is what the maintainer reads to tune the valu
     afterwards. The trigger carries the caution that the long cooldown of the spell asks for: `Taunt` must be on its
     own cooldown, the tank must hold the spell and the rage for it, and the mob must really be at the party member -
     `Unit::CanReachWithMeleeAutoAttack()` of either side of that fight says so, and a mob that is still running
-    across the room is a mob that the tank walks to and takes with its rotation. Unlike the Thunder Clap, the grab
-    is not held to the Tactical Mastery rank that makes an extra stance switch worth its rage: the party member is
-    lost while the tank waits for a talent.
+    across the room is a mob that the tank walks to and takes with its rotation.
+    `Thunder Clap` is asked for in two cases and in no other. The opening of a charge may spend one clap on the pack
+    about its target: the charge leaves the tank in the Battle Stance that the clap needs, that pack is at its
+    closest in the seconds after the charge, and the area of the clap is the first threat on every mob that is
+    coming - `PB_WARRIOR_THUNDER_CLAP_PACK_COUNT` red-name mobs about the target, the rage of the spell and its
+    cooldown, one cast, and the ask is over with the Battle Stance of the charge, whether the cast was answered or
+    the conditions were not there. The debuff of the spell is not asked for in that case, because the point is the
+    threat over the pack and not the debuff of one mob. The other case is an elite `PB_WARRIOR_THUNDER_CLAP_LEVEL_GAP`
+    levels above the tank or more, which is the skull that the client shows for a boss: the debuff of the clap takes
+    attack power off the mob that hits the tank, so the tank keeps that debuff, asks the Battle Stance when it is
+    gone and the rage is there, and asks the Defensive Stance back on the next update. The rank of `Tactical Mastery`
+    is no condition of either case, and the rule that came before this one - a pack of three, a target without the
+    debuff, and that rank of the talent - asked for a stance change in the middle of a fight that the talent had to
+    make worth its rage.
+    The opening of a charge is held back while a neutral stands at peace within
+    `PB_WARRIOR_THUNDER_CLAP_NEUTRAL_WATCH_DIST` of the tank or of its target, because the debuff of the clap would
+    wake such a neutral into a second fight that the tank did not ask for. A neutral that is fighting already is in
+    that fight whatever the clap does to it, so it is no reason to hold the clap back - and it is not one of the
+    three of the pack either, which is the pack of the mobs that the tank goes to hold. The look is asked at both
+    of the points about which the area of the spell may be drawn, because which of the two the core uses is in the
+    spell data of the running patch, and `PartyBotAI::HasWakingNeutralNear()` is the one look that the shout of the
+    tank and this one share; the reaction of a mob is what its faction and the reputation of the bot say, and a
+    fight does not change it, so `Unit::IsInCombat()` is what tells a neutral that is engaged from one at peace.
     A mob that beats another party member is a mob that the tank is to take, not to fight: the tank goes to it, keeps
     it with the ordinary rotation and with its taunts, and goes back to the target it was holding when its hold is
     full - `PB_WARRIOR_SECONDARY_HOLD_MS`, six seconds, a value for the maintainer to tune when the mobs are seen to
@@ -331,6 +351,18 @@ document and the code in step - it is what the maintainer reads to tune the valu
     rotation and its chase; the global cooldown that the core shares between the spells of one caster is all that
     can move one of them to a later update. Last Stand is asked for first because its threshold is the higher one,
     which keeps the longer cooldown for later.
+    `Demoralizing Shout` outranks `Sunder Armor` in that rotation, and the number of mobs around the tank is not a
+    condition of it: the debuff of the shout lowers the damage that the party takes from one mob as much as from
+    five, so the shout is asked for whenever the mob the tank holds does not carry it. The one thing that stops the
+    shout is a neutral that stands at peace within `PB_WARRIOR_SHOUT_NEUTRAL_WATCH_DIST` of the tank, because the
+    debuff of the shout wakes such a neutral into a second fight that the tank did not ask for; a neutral that is
+    already fighting is in that fight whatever the shout does to it, and is no reason to hold the shout back. Only
+    the units that the shout could really reach are looked at, and the shout is let off at the tank itself as
+    `Battle Shout` is, because the area of the spell is the tank.
+    Whether a mob may be fought is not asked of `Unit::IsHostileTo()`, which reads the red name only: it is asked of
+    `CombatBotBaseAI::IsValidHostileTarget()`, which is built on `WorldObject::IsValidAttackTarget()` and takes a
+    yellow neutral that has joined the fight, as the area of effect of the core takes it. The yellow of a unit is
+    `WorldObject::GetReactionTo()` at `REP_NEUTRAL`, the same value that the client colours that name plate.
 
 18. A warrior is under the shield tank rules when it wears a shield, or when it carries the tank role without a
     shield (`IsProtectionWarriorTank()`): the Defensive Stance, the taunts and the target handoff of a tank must not
