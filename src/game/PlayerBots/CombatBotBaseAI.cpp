@@ -2536,10 +2536,10 @@ void CombatBotBaseAI::CollectQuestRewardSpells(
 }
 
 // A character is not taught everything by a trainer: the defensive and the berserker stance of a warrior come from
-// the class training quests of its weaponmaster, which no trainer sells, and a bot that knows every trainer spell
-// of its level but not those stances stands in the stance of its charge and can neither Taunt nor Sunder Armor the
-// way a tank does. A bot has no quest log, so the quests that its class and race may take at its level give their
-// reward spell here, once for each level reached like the trainer sync does.
+// different class quests at different levels. The reward quests of defensive stance (1498, 1665, 1678, 1683 and
+// 1819) have MinLevel 10, while The Affray (1719), which rewards berserker stance, has MinLevel 30. A bot has no
+// quest log, so each quest that its class and race may take at its level gives its reward spell here; the MinLevel
+// check below is what makes a level 10 warrior take the first stance and leaves the second until level 30.
 bool CombatBotBaseAI::LearnQuestRewardSpellsForLevel()
 {
     if (me->GetLevel() == m_questTaughtLevel)
