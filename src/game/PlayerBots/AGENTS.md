@@ -309,6 +309,15 @@ document and the code in step - it is what the maintainer reads to tune the valu
     melee reach, and answers false so that the rotation still runs. Where a second owner asked for another stance,
     the Defensive Stance was taken away on one update and asked back on the next, both updates stopped at the stance,
     and a shield tank stayed in the stance of its charge without a Taunt or a Sunder Armor.
+    A mob that beats another party member is a mob that the tank is to take, not to fight: the tank goes to it, keeps
+    it with the ordinary rotation and with its taunts, and goes back to the target it was holding when its hold is
+    full - `PB_WARRIOR_SECONDARY_HOLD_MS`, six seconds, a value for the maintainer to tune when the mobs are seen to
+    go back to the party member too soon. The hold is a length of time and not the sight of a spell that lands: what
+    one cast does to the threat on one mob is not known to the bot, and a cast that lands says nothing about whether
+    the mob stays. The time is spent only in an update in which a swing of the bot could really land on the mob -
+    `Unit::CanAutoAttackTarget()` is the gate that the core puts in front of its own auto attack, and it covers the
+    controls of the bot, its reach and its facing - so a run to a mob that stands away, a stun or a fear of the bot
+    and a mob that walks out of reach spend nothing of the hold.
     The survival of that tank is a rule of its own, asked for only in combat and without ending the update: Last
     Stand at thirty per cent of the health of the bot or below, Shield Wall at twenty per cent or below. Neither
     spell costs rage nor belongs to a stance, so a tank that puts one of them up keeps its target, its taunt, its

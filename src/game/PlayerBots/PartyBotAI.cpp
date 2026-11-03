@@ -54,6 +54,12 @@ enum PartyBotSpells
 #define PB_MAX_FOLLOW_ANGLE 6.0f
 #define PB_RAGE_PER_POINT 10
 
+// How long a shield tank keeps a mob that was beating another party member, counted in the seconds in which a
+// swing of the tank could really land on that mob. The visit is not asked to end with a spell that lands, because
+// the threat that a cast makes on one mob is not known here; it is asked to be long enough to be an answer, and
+// the maintainer extends this when the mobs are seen to go back to the party member too soon.
+#define PB_WARRIOR_SECONDARY_HOLD_MS 6000
+
 // What is taken for a ledge that a player jumps down instead of walking around: the leader stands that much lower
 // than the bot and that close by, and the pathfinder of the follow generator has no way down to offer. The ground
 // to land on is looked for along the line from the bot to its leader, in steps of PB_DROP_STEP_LAND_DIST, and it
@@ -1627,8 +1633,6 @@ bool PartyBotAI::TryCastForcedWarriorSunder(Unit* pTarget)
     if (DoCastSpell(pTarget, pSunder) != SPELL_CAST_OK)
         return false;
 
-    if (m_warriorSecondaryTargetGuid == pTarget->GetObjectGuid())
-        m_warriorSecondarySundered = true;
     return true;
 }
 
@@ -1712,15 +1716,22 @@ bool PartyBotAI::UpdateProtectionWarriorTankTarget()
     if (!pSecondaryTarget && !m_warriorSecondaryTargetGuid.IsEmpty())
     {
         m_warriorSecondaryTargetGuid.Clear();
-        m_warriorSecondarySundered = false;
+        m_warriorSecondaryHoldTimer.Reset(0);
     }
 
     if (pSecondaryTarget)
     {
-        if (m_warriorSecondarySundered)
+        // The hold of the tank on that mob is a length of time and not the sight of a spell: whether one mob keeps
+        // beating the party member after a cast is not known here, and the tank is asked to be on the mob long
+        // enough for its rotation and its taunts to answer. The time goes by only in an update in which a swing of
+        // the bot could really land on the mob - `Unit::CanAutoAttackTarget` is the gate that the core puts in
+        // front of its own auto attack, and it says that no control holds the bot, that both are alive, that the
+        // mob is within melee reach and that the bot stands facing it - so a run to a mob that stands away, a stun
+        // or a fear of the bot, and a mob that walks out of reach spend nothing of the hold.
+        if (m_warriorSecondaryHoldTimer.Passed())
         {
             m_warriorSecondaryTargetGuid.Clear();
-            m_warriorSecondarySundered = false;
+            m_warriorSecondaryHoldTimer.Reset(0);
 
             Unit* pPrimaryTarget = m_warriorPrimaryTargetGuid.IsEmpty() ? nullptr :
                 me->GetMap()->GetUnit(m_warriorPrimaryTargetGuid);
@@ -1742,6 +1753,12 @@ bool PartyBotAI::UpdateProtectionWarriorTankTarget()
                     me->AttackStop(true);
                 AttackStart(pSecondaryTarget);
             }
+
+            // The state machine runs once per PB_UPDATE_INTERVAL, so an update that the gate of the core lets
+            // through is a full step of the hold. The rotation of the tank runs on this mob as on any other
+            // target, and that rotation is what the hold is spent on.
+            if (me->CanAutoAttackTarget(pSecondaryTarget) == ATTACK_RESULT_OK)
+                m_warriorSecondaryHoldTimer.Update(PB_UPDATE_INTERVAL);
 
             return TryTauntProtectionWarriorTarget(pSecondaryTarget);
         }
@@ -1782,7 +1799,7 @@ bool PartyBotAI::UpdateProtectionWarriorTankTarget()
         return false;
 
     m_warriorSecondaryTargetGuid = pNextSecondaryTarget->GetObjectGuid();
-    m_warriorSecondarySundered = false;
+    m_warriorSecondaryHoldTimer.Reset(PB_WARRIOR_SECONDARY_HOLD_MS);
     if (pCurrentTarget != pNextSecondaryTarget)
     {
         if (pCurrentTarget)
@@ -4428,7 +4445,7 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
 {
     m_warriorPrimaryTargetGuid.Clear();
     m_warriorSecondaryTargetGuid.Clear();
-    m_warriorSecondarySundered = false;
+    m_warriorSecondaryHoldTimer.Reset(0);
 
     bool const protectionTank = IsProtectionWarriorTank();
     SpellEntry const* pStance = protectionTank ?

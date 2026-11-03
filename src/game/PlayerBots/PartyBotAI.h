@@ -162,7 +162,10 @@ public:
     ObjectGuid m_warriorChargeTargetGuid;
     ObjectGuid m_warriorPrimaryTargetGuid;
     ObjectGuid m_warriorSecondaryTargetGuid;
-    bool m_warriorSecondarySundered = false;
+    // How long the tank still keeps a mob that was beating another party member. The timer runs down only in an
+    // update in which a swing of the bot could really land on that mob, so a run to it, a control of the bot or a
+    // walk out of reach does not spend it. It is armed when the mob is taken, at PB_WARRIOR_SECONDARY_HOLD_MS.
+    ShortTimeTracker m_warriorSecondaryHoldTimer;
 
     // Why the last stance that this bot asked for is not the form that it wears. The stance of a warrior is
     // decided in one place, so the last ask and the reason of it are enough to read what a bot is doing; they
