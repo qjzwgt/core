@@ -18,6 +18,10 @@ document and the code in step - it is what the maintainer reads to tune the valu
   learned spells says the talent; when nothing is learned, the role of the bot says it. A talent page asked for by
   `.partybot add <abbreviation>` is authoritative for the gear of that bot, since a tank build can spend its first
   points in another tree before the tree of its talent opens.
+- Warrior ability names: 横扫 = `Sweeping Strikes` (12292), the ability that copies the hits of the next seconds onto
+  the mobs about the warrior, and 顺劈斩 = `Cleave`, a cheap hit over the front of the pack that no bot rule asks for.
+  The two names are one letter apart in Chinese and nothing like each other in the spell data, and the rage that a
+  damage warrior banks is the rage of the first of them.
 
 ## Decisions of the maintainer (already made - ask before changing them)
 1. The pool is what a player reaches while adventuring: `ItemPrototype::Discovered` ∪ world loot ∪ crafted gear,
@@ -299,12 +303,30 @@ document and the code in step - it is what the maintainer reads to tune the valu
     Armor. A stance cast that the ordinary bot cast gate rejects uses the same spell through the triggered server
     path, with the global cooldown put back. Only the worn form says that a stance was taken: a routine that is
     told anything else goes on with the skills of the stance that the bot is standing in, because a stance that was
-    asked for comes, while a routine that waits for it never runs. The out-of-combat `Charge` of the warrior routine
-    is left to the warrior that rests in Battle Stance; the opening of a shield tank belongs to `AttackStart()`,
-    which takes Battle Stance with the charge and keeps the target through it, and the rotation of the tank brings
-    the Defensive Stance back on the next update.
+    asked for comes, while a routine that waits for it never runs. `Charge` has one owner for every warrior of the
+    party, `AttackStart()`: the opening of a shield tank and the opening of a damage warrior are the same code, and
+    the out-of-combat routine of a damage warrior asks no charge of its own - which is also why that warrior no
+    longer rests in the Battle Stance to be ready for one. The opening takes Battle Stance with the charge, keeps
+    the target through it, and the rotation of the bot brings its own stance back on the update after it. An opening
+    is refused in an instance - `Map::IsDungeon()`, which is a dungeon and a raid - and in nothing else: a
+    battleground is open ground, as are the fields of the world, and those are the ground a charge is for.
+    An opening of a charge is an ask that stands, and not one cast. The stance that the charge needs is asked in
+    the update that begins the opening; the core applies a stance when the spell event of the caster runs, and that
+    stance puts a global cooldown back and leaves its own spell in progress, either of which makes the core refuse
+    the charge of the same update. A target that is inside the charge range from the beginning was the case that
+    this lost: its one ask was refused, `TryChargeWarriorTarget()` was read as a plain no, and the tank walked to
+    the mob in its own Defensive Stance and never charged. The function now answers what the ask is -
+    `PB_CHARGE_CAST`, `PB_CHARGE_APPROACH`, `PB_CHARGE_LATER`, `PB_CHARGE_REFUSED` - and only the last of those
+    gives the opening up: the target named when the opening began is kept, `TryContinueWarriorCharge()` asks again
+    on the next updates, and it owns those updates, which is what keeps a stance owner from taking the Battle
+    Stance back between the ask of an opening and its charge. `PB_WARRIOR_CHARGE_ASK_UPDATES` bounds the waiting
+    for the stance and its global cooldown, because a tank that stands at the edge of the charge range while its
+    party fights is worse than a tank that walks in; the walk to that edge and the charge of a target that was
+    never in the range are bounded by nothing, as before.
     `UpdateProtectionWarriorTankCombat()` and `UpdateOutOfCombatAI_Warrior()` are the only owners of the stance of a
-    shield tank: the taunt fallback casts `Taunt`, asks for the chase of a target that is out of melee reach, and
+    shield tank, apart from the standing opening of a charge above, which owns the Battle Stance that it asked until
+    the charge comes or its bounded ask is given up. The taunt fallback casts `Taunt`, asks for the chase of a
+    target that is out of melee reach, and
     answers false so that the rotation still runs. Where a second owner asked for another stance, the Defensive
     Stance was taken away on one update and asked back on the next, both updates stopped at the stance, and a shield
     tank stayed in the stance of its charge without a Taunt or a Sunder Armor. `Mocking Blow` belongs to Battle
@@ -345,6 +367,14 @@ document and the code in step - it is what the maintainer reads to tune the valu
     `Unit::CanAutoAttackTarget()` is the gate that the core puts in front of its own auto attack, and it covers the
     controls of the bot, its reach and its facing - so a run to a mob that stands away, a stun or a fear of the bot
     and a mob that walks out of reach spend nothing of the hold.
+    `Shield Block` is asked of a mob that hurts the party with its body. The block blunts the next physical blows
+    landed on the tank, so whether it is for a mob at all is asked of the class that the template of that mob gives
+    it - `CombatBotBaseAI::IsPhysicalDamageClass()`, the same reading that the battle bot warrior makes before its
+    own `Shield Block`. A mob that reads a bar to hurt the party may well walk in and swing once in a while, and
+    that is not what ten of the rage and a minute of a cooldown are spent on: against such a mob `Revenge`,
+    `Shield Slam` and `Sunder Armor` do more for the hold than a block that nothing lands on.
+    `PartyBotAI::IsWarriorShieldBlockWanted()` asks that as well as the older condition, that some mob is really
+    swinging at the tank.
     The survival of that tank is a rule of its own, asked for only in combat and without ending the update: Last
     Stand at thirty per cent of the health of the bot or below, Shield Wall at twenty per cent or below. Neither
     spell costs rage nor belongs to a stance, so a tank that puts one of them up keeps its target, its taunt, its
@@ -378,6 +408,70 @@ document and the code in step - it is what the maintainer reads to tune the valu
     Stance, a Taunt or a Sunder Armor. A bot cloned from a player matches no build, and so does a bot with too
     few points spent to tell two builds apart: for both of them only the shield says the tank.
     `.partybot stance` prints which of the two rules a selected warrior is under.
+
+19. A warrior that is not under the shield tank rules is a damage warrior, and its rotation keeps one stance between
+    the spells that ask for another: the Berserker Stance while the bot knows Bloodthirst and has not taken Improved
+    Overpower, the Battle Stance for every other damage warrior (`GetWarriorHomeStanceSpell()`). Neither the asked
+    talent nor the worn stance is saved with a bot, so the rule is read from what the bot knows. Bloodthirst is a rank
+    spell of the Fury tree that the spell data of the bot shows; Improved Overpower is a passive of the Arms tree,
+    which gives no spell of its own and is to be seen only in the spell map of the character - which is why
+    `PopulateSpellData()` collects it next to Tactical Mastery, keeps the best rank of either, and does so before the
+    passive spells of that map are skipped a few lines below.
+    Keeping a stance is not never changing one. The rotation changes into the stance that a spell of another stance
+    asks for, casts there, and asks the stance of the talent back: the ask of that stance comes before a want that
+    names no stance, and a rotation that found nothing else to do asks it back too
+    (`UpdateWarriorDamageRotation()`). An ask that the core refuses does not end the update, because a routine that
+    waits for a stance that is not coming never runs at all - the want is answered in the stance that is worn, and the
+    ask is made again on the next update. The ask is made for one want only where that want could really be cast in
+    the stance of the talent: a spell that the data of the spell keeps to the other stance would buy a change that
+    ends with itself refused, and the next update would change back again, two stance asks a second and no spell
+    behind either. Which stance the data of a spell asks for is read from `SpellEntry::Stances`, the field that
+    `GetErrorAtShapeshiftedCast()` reads (`GetSpellStanceRequirement()`), so the rotation carries no table of which
+    ability belongs to which form; a spell whose data names no stance goes off in the stance that is worn. A want that
+    is worth no more than the rage and the global cooldown of a change is collected with `canChangeStance = false`
+    and is done in the stance that is worn or not at all: `Overpower` is the case the maintainer named, and
+    `Mortal Strike`, `Bloodthirst`, `Rend`, `Heroic Strike`, `Battle Shout`, `Death Wish` and `Berserker Rage` are
+    the same reading. `Bloodthirst` names no stance in the data of this world, which is what makes the stance of the
+    talent the stance in which the abilities of a talent go off: a bot that keeps the Berserker Stance and a bot that
+    has the Battle Stance back because it took Improved Overpower both use it where they stand.
+    The order of the rotation is `CollectWarriorDamageWants()`, which writes the wants of the maintainer in their rank
+    and nothing else: `Berserker Rage` when a fear holds the bot in the Berserker Stance; the bank of a `Sweeping
+    Strikes` over a pack; `Overpower` in the Battle Stance; `Execute` below twenty per cent of the health of the mob;
+    the interrupt; `Mortal Strike`; `Bloodthirst`; `Whirlwind`; then, for a bot that has neither of the two talent
+    abilities and nothing else to spend its rage on, `Rend` and the stacks of `Sunder Armor` without a limit of
+    stacks; and `Heroic Strike` of a bot that has no `Sunder Armor`. The shout of attack strength is asked for while
+    the fight lasts and not only before it, because a party that has been fighting for a minute is a party that lost
+    the shout on the way. What the list of the maintainer does not name is not asked: `Last Stand`, `Concussion Blow`,
+    `Intimidating Shout`, `Retaliation`, `Recklessness`, `Intercept`, `Disarm`, `Hamstring` and `Cleave` have no rule
+    there, and a damage warrior does not take the Defensive Stance because its own health went low. `Death Wish` is
+    asked for at the elite that the client marks with a skull, `IsSkullConEliteTarget()`, the same reading the shield
+    tank uses for its `Thunder Clap`: an elite frame a few levels above the bot is not what the burst of a warrior is
+    spent on.
+    Three of the answers of an update are not casts. The rage that a want costs is asked for together with the rage of
+    the stance change that the want needs, and where it is not there the answer is `Bloodrage` - the two are asked for
+    together because a stance that the bot changed into and stands in with nothing to cast is rage spent on nothing.
+    A `Sweeping Strikes` over a pack is a bank: while that spell is ready, the rotation waits for the rage that the
+    data of the spell names and spends none of it on the wants below (`keepsRage`), because the pack is at its closest
+    in the seconds in which the warrior stands in the middle of it, and the rage spent elsewhere is the sweep that
+    never came. The armor debuff is the one spell of the rotation that adds a stack by being cast again while the mob
+    still carries it, which is what the ordinary cast gate of the core refuses, so it goes through the forced cast that
+    the shield tank uses for the same reason (`TryCastForcedWarriorSunder()`).
+    The two looks that an area of several mobs asks for are one read of the melee about the bot,
+    `ReadWarriorMeleePack()`: a neutral at peace that the area would wake into a second fight that the party did not
+    ask for, and a mob held by a control that damage breaks, which is the control that another party member is keeping.
+    Both of them stop a `Sweeping Strikes` and a `Whirlwind`; a neutral that has joined a fight of its own is in that
+    fight whatever the area does to it, and is no reason to hold a spell back. `PB_WARRIOR_MULTI_MOB_DIST` is the
+    radius of that read, and the red names in it are what a pack is; `PB_WARRIOR_WHIRLWIND_RAGE` is the fifty points
+    of rage that a Whirlwind is asked for at rather than the cost of the spell, because half of a Whirlwind is a
+    stance change spent on nothing; `PB_WARRIOR_PUMMEL_STANCE_RAGE_MIN` and `PB_WARRIOR_PUMMEL_STANCE_RAGE_MAX` bound
+    the window of rage in which a bot that stands in the Battle Stance may leave it for an interrupt. All of those are
+    values for the maintainer to tune; `PB_RAGE_PER_POINT` is the ratio between the points that those rules speak of
+    and the rage of the core.
+    The interrupt of a damage warrior stands below the abilities of its rotation rather than above them: the party
+    loses less from a spell that the warrior was late to stop than from the hit that the same global cooldown would
+    have bought. In the Berserker Stance `Pummel` is there for nothing; a bot that stands in the Battle Stance leaves
+    it for the interrupt only where the talent that keeps the rage through a change was taken and the rage is inside
+    the window above.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
@@ -424,6 +518,13 @@ created new), defense rating, weapon skills.
   last stance ask was refused (`TrySwitchWarriorStance()` records it in `m_warriorStanceBlock`). That is how a
   stance that never comes is told apart: a spell the bot has not learned, a gate that never clears, or a rule that
   was never reached.
+  The command also says whether an opening of a charge still stands for a target and what it has spent waiting for
+  the stance that it asked, which is how a shield tank that stands out of combat in the Battle Stance of its charge
+  is told from a tank whose rules have gone wrong: the ask owns the stance while it stands.
+  For a damage warrior the command prints the two facts that its stance is made of - whether Bloodthirst was learned
+  and whether Improved Overpower was taken - because nothing else about a bot says which of the two stances its rules
+  should keep, and a bot between the level at which one is learned and the level at which the other is taken is a bot
+  whose stance changes in the middle of its levels.
   A stance listed as not known is a spell that was never taught, which is a question for the two spell syncs of
   rule 13 and not for the stance rules, so the command also lists the quests of this world that would give such a
   stance to a character of the class and race of the bot, with the minimum level and the class and race masks that

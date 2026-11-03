@@ -527,6 +527,10 @@ public:
             SpellEntry const* pConcussionBlow;
             SpellEntry const* pMockingBlow;
             SpellEntry const* pTacticalMastery;
+            // Passive talents of the class: they give no spell of their own, so they are only to be seen in the
+            // spell map of the character. Improved Overpower is the talent of a damage warrior that wants the
+            // Battle Stance, and Tactical Mastery is the rank that says what a stance change leaves of the rage.
+            SpellEntry const* pImprovedOverpower;
             SpellEntry const* pPiercingHowl;
         } warrior;
         struct

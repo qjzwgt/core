@@ -66,6 +66,14 @@ enum PartyBotSpells
 // inside it a moment later, and the shout is not worth the extra fight that it brings.
 #define PB_WARRIOR_SHOUT_NEUTRAL_WATCH_DIST 10.0f
 
+// How many updates of the bot the opening of a charge may wait for the stance that it asked and for the global
+// cooldown of that stance. The core applies a stance when the spell event of the caster runs and puts a global
+// cooldown back for it, so the charge of the update that asks the stance cannot go off; the next updates can. The
+// window is short on purpose, because the opening is worth nothing when the party has to wait for its tank: one
+// update of a party bot is PB_UPDATE_INTERVAL, a second. The maintainer lengthens this when the stance of a bot
+// comes later than that.
+#define PB_WARRIOR_CHARGE_ASK_UPDATES 3
+
 // The Thunder Clap of a shield tank is asked for in two cases. The opening of a charge may spend one clap on the
 // pack of red-name mobs about its target, which is the number below, because that clap puts the first threat on
 // every mob that is coming. Before that clap the tank looks for a neutral at peace within the area that the clap
@@ -77,6 +85,25 @@ enum PartyBotSpells
 #define PB_WARRIOR_THUNDER_CLAP_PACK_COUNT 3
 #define PB_WARRIOR_THUNDER_CLAP_LEVEL_GAP 3
 #define PB_WARRIOR_THUNDER_CLAP_NEUTRAL_WATCH_DIST 8.0f
+
+// How far about a damage warrior the area of a spell of several mobs reaches: Whirlwind and the bank of a
+// Sweeping Strikes are asked for at the pack that the warrior can reach, and not at the pack that its target
+// could reach from where that mob stands. It is a value for the maintainer; the core takes the area that the
+// spell of the running patch really covers from its own spell data, which is not read here.
+#define PB_WARRIOR_MULTI_MOB_DIST 8.0f
+
+// The rage that the rotation of a damage warrior keeps before it whirlwinds, in points of rage. Whirlwind is the
+// most damage that the rage of a melee warrior buys at once, and rage below the point where it cannot be paid
+// for is better spent on the abilities of the stance that the bot is standing in.
+#define PB_WARRIOR_WHIRLWIND_RAGE 50
+
+// The window of rage, in points of rage, in which a damage warrior that stands in the Battle Stance will change
+// to the Berserker Stance to interrupt with Pummel: above the cost of the change of stance, and below the point
+// where the rage is worth keeping for the abilities of the Battle Stance. An interrupt is never worth a change of
+// stance outside that window, which is the same reason why the interrupt of a damage warrior is ranked below its
+// abilities rather than above them.
+#define PB_WARRIOR_PUMMEL_STANCE_RAGE_MIN 10
+#define PB_WARRIOR_PUMMEL_STANCE_RAGE_MAX 25
 
 // What is taken for a ledge that a player jumps down instead of walking around: the leader stands that much lower
 // than the bot and that close by, and the pathfinder of the follow generator has no way down to offer. The ground
@@ -123,6 +150,48 @@ enum PartyBotSpells
 #define PB_RECLAIM_STAND_ARRIVED 3.0f
 #define PB_RECLAIM_AGGRO_SEARCH 45.0f
 #define PB_SPIRIT_WALK_LEGS 40
+
+// The form that a stance spell puts on its caster: the shapeshift effect of the spell, so that the rules of the
+// bots follow the spell of the running patch rather than a list of the three stances of the class. FORM_NONE for
+// a spell that asks for no form, which is not a stance spell at all.
+static ShapeshiftForm GetStanceSpellForm(SpellEntry const* pStanceSpell)
+{
+    if (!pStanceSpell)
+        return FORM_NONE;
+
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (pStanceSpell->EffectApplyAuraName[i] == SPELL_AURA_MOD_SHAPESHIFT)
+            return ShapeshiftForm(pStanceSpell->EffectMiscValue[i]);
+    }
+
+    return FORM_NONE;
+}
+
+// The stance that the data of a warrior spell asks for. The three stances are bits of the field that this fork
+// keeps in the database next to the rest of the spell, so the rotation of a damage warrior can reach a spell of
+// another stance by changing stance and take the stance of its talent back after it, without naming here which
+// ability wants which form. FORM_NONE when the data of the spell names no stance: such a spell goes off in the
+// stance that the bot is standing in, which is the stance of its talent.
+static ShapeshiftForm GetSpellStanceRequirement(SpellEntry const* pSpellEntry)
+{
+    if (!pSpellEntry)
+        return FORM_NONE;
+
+    for (uint32 bit = 0; bit < 32; ++bit)
+    {
+        if (!(pSpellEntry->Stances & (1u << bit)))
+            continue;
+
+        // The bit convention of GetErrorAtShapeshiftedCast: a form is the bit below itself. Only the stances of
+        // the class are of interest here, and a spell that names another shapeshift is not a warrior ability.
+        ShapeshiftForm const form = ShapeshiftForm(bit + 1);
+        if (form == FORM_BATTLESTANCE || form == FORM_DEFENSIVESTANCE || form == FORM_BERSERKERSTANCE)
+            return form;
+    }
+
+    return FORM_NONE;
+}
 
 bool PartyBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
@@ -926,21 +995,36 @@ bool PartyBotAI::AttackStart(Unit* pVictim)
         if (!me->Attack(pVictim, true) && me->GetVictim() != pVictim)
             return false;
 
+        // Every warrior opens the same way. The stance of an opening that goes to the charge is the stance that
+        // the charge wants, and where no charge is to be made - in an instance, or without the spell, the range or
+        // the rage for it - the bot keeps the stance that its own rules ask for, which is the Defensive Stance of
+        // a shield tank and the stance of the talents of a damage warrior.
         bool const openWithCharge = CanOpenWarriorCombatWithCharge();
-        bool const protectionTank = IsProtectionWarriorTank();
-        SpellEntry const* pStance = openWithCharge || !protectionTank ?
-            m_spells.warrior.pBattleStance : m_spells.warrior.pDefensiveStance;
-        ShapeshiftForm const desiredForm = openWithCharge || !protectionTank ?
-            FORM_BATTLESTANCE : FORM_DEFENSIVESTANCE;
+        SpellEntry const* pStance = openWithCharge ?
+            m_spells.warrior.pBattleStance :
+            (IsProtectionWarriorTank() ? m_spells.warrior.pDefensiveStance : GetWarriorHomeStanceSpell());
+        ShapeshiftForm const desiredForm = GetStanceSpellForm(pStance);
 
         if (pStance && me->GetShapeshiftForm() != desiredForm)
             TrySwitchWarriorStance(pStance);
 
-        if (openWithCharge &&
-            me->GetShapeshiftForm() == FORM_BATTLESTANCE &&
-            TryChargeWarriorTarget(pVictim))
+        if (openWithCharge)
         {
-            return true;
+            // The opening begins here and may not end here. The stance that a Charge needs is the one asked above,
+            // the core applies a stance when the spell event of the caster runs, which can be after this update of
+            // the bot, and that stance puts a global cooldown back and leaves its own spell in progress, either of
+            // which refuses the charge of this update. So the ask stands for the target, and the following updates
+            // answer it at PartyBotAI::TryContinueWarriorCharge, which is also what walks a bot that stands too
+            // far from its target into the charge range. A target that is inside that range from the beginning was
+            // the case that this lost: its ask was refused once, the bot walked to the mob in its own Defensive
+            // Stance, and the charge never came.
+            m_warriorChargeTargetGuid = pVictim->GetObjectGuid();
+            m_warriorChargeAskRetries = 0;
+
+            if (TryChargeWarriorTarget(pVictim) != PB_CHARGE_REFUSED)
+                return true;
+
+            ClearWarriorChargeOpening();
         }
     }
 
@@ -1257,9 +1341,16 @@ bool PartyBotAI::IsOtherPartyMember(Unit const* pTarget) const
     return pGroup && pGroup->IsMember(pTarget->GetObjectGuid());
 }
 
-// A warrior opens a fight with Charge. A bot has no keyboard to keep the target at the
-// outside edge of the charge range, so the chase generator stops at the maximum range
-// and the spell is cast as soon as the target enters it.
+// A warrior opens a fight with Charge, and the opening is the same for every warrior of the party: a damage
+// warrior and a shield tank are asked in the same place and keep the target through the change of stance that the
+// charge wants. A bot has no keyboard to keep the target at the outside edge of the charge range, so the chase
+// generator stops at the maximum range and the spell is cast as soon as the target enters it.
+//
+// The opening is asked for outside an instance only. The ground of a dungeon or a raid is ground that the party
+// has already walked into: the mobs are pulled by whoever stands in front, the warrior is standing in the middle
+// of them when its bot joins, and the rage and the global cooldown of a charge that hits nothing are lost from
+// the rotation of the fight. A battleground is not an instance for the map of the core, and the yard of a
+// battleground is the open ground that the rule is about.
 bool PartyBotAI::CanOpenWarriorCombatWithCharge() const
 {
     Map* pMap = me->GetMap();
@@ -1271,28 +1362,52 @@ bool PartyBotAI::CanOpenWarriorCombatWithCharge() const
         me->GetPower(POWER_RAGE) >= Spell::CalculatePowerCost(m_spells.warrior.pCharge, me);
 }
 
-bool PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
+// Whether the opening of a charge may be asked again on the next update of the bot. A stance that was asked in
+// this update, the global cooldown of it and the spell of it that is still in progress all answer themselves, so
+// they are not reasons to give the opening up; PB_WARRIOR_CHARGE_ASK_UPDATES of them are spent, though, because a
+// tank that waits at the edge of the charge range while its party fights is worse than a tank that walks in.
+bool PartyBotAI::CanAskWarriorChargeLater()
+{
+    if (m_warriorChargeAskRetries >= PB_WARRIOR_CHARGE_ASK_UPDATES)
+        return false;
+
+    ++m_warriorChargeAskRetries;
+    return true;
+}
+
+// The opening of a charge is over, whatever the reason: nothing is remembered for it, and the chase of the bot is
+// the ordinary one again.
+void PartyBotAI::ClearWarriorChargeOpening()
+{
+    m_warriorChargeTargetGuid.Clear();
+    m_warriorChargeAskRetries = 0;
+    me->SetCasterChaseDistance(0.0f);
+}
+
+PartyBotAI::WarriorChargeAsk PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
 {
     if (!pTarget || !m_spells.warrior.pCharge || me->IsInCombat())
-        return false;
+        return PB_CHARGE_REFUSED;
 
     Map* pMap = me->GetMap();
     if (!pMap || pMap->IsDungeon())
-        return false;
+        return PB_CHARGE_REFUSED;
 
     SpellEntry const* pCharge = m_spells.warrior.pCharge;
     uint32 const rageCost = Spell::CalculatePowerCost(pCharge, me);
     if (!me->IsSpellReady(pCharge) ||
-        me->HasGCD(pCharge) ||
         me->GetPower(POWER_RAGE) < rageCost ||
-        pCharge->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK ||
         pTarget->IsImmuneToSpell(pCharge, false) ||
         !me->IsWithinLOSInMap(pTarget))
-    {
-        m_warriorChargeTargetGuid.Clear();
-        me->SetCasterChaseDistance(0.0f);
-        return false;
-    }
+        return PB_CHARGE_REFUSED;
+
+    // A Charge belongs to the Battle Stance, and the stance that the opening asked is applied when the spell event
+    // of the caster runs, which can be after the update that asked it: the ask of such an update stands, bounded by
+    // CanAskWarriorChargeLater(). A bot that has not learned the stance is refused at once, so that an ask cannot
+    // stand for a form that would never come.
+    if (pCharge->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK)
+        return m_spells.warrior.pBattleStance && CanAskWarriorChargeLater() ?
+            PB_CHARGE_LATER : PB_CHARGE_REFUSED;
 
     float const chargeRange = GetSpellMaxRangeForBot(pCharge);
     if (me->GetCombatDistance(pTarget) > chargeRange)
@@ -1301,20 +1416,25 @@ bool PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
         me->SetTargetGuid(m_warriorChargeTargetGuid);
         me->SetCasterChaseDistance(std::max(chargeRange - 1.0f, 1.0f));
         me->GetMotionMaster()->MoveChase(pTarget, 1.0f, 0.0f);
-        return true;
+        return PB_CHARGE_APPROACH;
     }
 
-    me->SetCasterChaseDistance(0.0f);
-    if (!IsTargetInSpellRange(pTarget, pCharge) ||
-        !CanTryToCastSpell(pTarget, pCharge))
-    {
-        m_warriorChargeTargetGuid.Clear();
-        return false;
-    }
+    if (!IsTargetInSpellRange(pTarget, pCharge))
+        return PB_CHARGE_REFUSED;
 
-    m_warriorChargeTargetGuid.Clear();
+    // The two gates that the stance of the opening leaves, and that clear by themselves: the global cooldown that
+    // the core puts back for a stance, and the spell of that stance which has not finished. The core refuses the
+    // charge of this update with either of them, and the next update of the bot is free of both.
+    if (me->HasGCD(pCharge) || me->IsNonMeleeSpellCasted())
+        return CanAskWarriorChargeLater() ? PB_CHARGE_LATER : PB_CHARGE_REFUSED;
+
+    if (!CanTryToCastSpell(pTarget, pCharge))
+        return PB_CHARGE_REFUSED;
+
     if (DoCastSpell(pTarget, pCharge) != SPELL_CAST_OK)
-        return false;
+        return CanAskWarriorChargeLater() ? PB_CHARGE_LATER : PB_CHARGE_REFUSED;
+
+    ClearWarriorChargeOpening();
 
     // A charge is only cast in Battle Stance, so the tank that charged stands in the stance that a Thunder Clap
     // would otherwise have to change to. The pack around the target is at its closest in the seconds after the
@@ -1323,7 +1443,7 @@ bool PartyBotAI::TryChargeWarriorTarget(Unit* pTarget)
     if (IsProtectionWarriorTank())
         m_warriorChargeOpeningThunderClap = true;
 
-    return true;
+    return PB_CHARGE_CAST;
 }
 
 bool PartyBotAI::TryContinueWarriorCharge()
@@ -1334,16 +1454,20 @@ bool PartyBotAI::TryContinueWarriorCharge()
     Unit* pTarget = me->GetMap()->GetUnit(m_warriorChargeTargetGuid);
     if (!pTarget || !IsValidHostileTarget(pTarget) || me->IsInCombat())
     {
-        m_warriorChargeTargetGuid.Clear();
-        me->SetCasterChaseDistance(0.0f);
+        ClearWarriorChargeOpening();
         return false;
     }
 
-    if (TryChargeWarriorTarget(pTarget))
-        return true;
+    // The opening owns this update while it stands: the walk to the charge range, the wait for the stance that was
+    // asked, and the charge itself. Nothing else in the update moves the bot or changes its stance, which is what
+    // keeps the Defensive Stance from being asked back between the ask of the opening and its charge.
+    if (TryChargeWarriorTarget(pTarget) == PB_CHARGE_REFUSED)
+    {
+        ClearWarriorChargeOpening();
+        return false;
+    }
 
-    m_warriorChargeTargetGuid.Clear();
-    return false;
+    return true;
 }
 
 uint32 PartyBotAI::GetTacticalMasteryRank() const
@@ -1415,6 +1539,20 @@ bool PartyBotAI::IsSkullConEliteTarget(Unit const* pTarget) const
 // that the spell could really reach are looked at: the gate of the bot for a target is the gate that the area of
 // effect of the core puts in front of its own targets, and the reaction of the bot is the one that the client
 // colours yellow.
+// Whether a neutral stands at peace about the bot: the area of a spell of the warrior would bring such a mob into
+// the fight, which is a fight that the party did not ask for. The yellow name is the reaction of the bot, which is
+// what the client colours, and a player that wears one in a neutral town is not a mob that a spell would wake. A
+// creature that is in a fight already is in it whatever the spell does to it, and a creature that the faction data
+// makes hostile wears a red name; the reaction of a mob is what its faction and the reputation of the bot say, and
+// a fight does not change it, so the fight itself is what tells a neutral that is engaged from one at peace.
+bool PartyBotAI::IsNeutralAtPeace(Unit const* pUnit) const
+{
+    if (!pUnit || !pUnit->IsCreature() || !IsValidHostileTarget(pUnit) || pUnit->IsInCombat())
+        return false;
+
+    return me->GetReactionTo(pUnit) == REP_NEUTRAL;
+}
+
 bool PartyBotAI::HasWakingNeutralNear(Unit const* pCenter, float radius) const
 {
     std::list<Unit*> nearbyUnits;
@@ -1422,13 +1560,29 @@ bool PartyBotAI::HasWakingNeutralNear(Unit const* pCenter, float radius) const
 
     for (Unit* pUnit : nearbyUnits)
     {
-        // The yellow name is the reaction of the bot, which is what the client colours, and a player that wears one
-        // in a neutral town is not a mob that a spell would wake. A creature that is in a fight already is in it
-        // whatever the spell does to it, and a creature that the faction data makes hostile wears a red name.
-        if (!pUnit->IsCreature() || !IsValidHostileTarget(pUnit) || pUnit->IsInCombat())
+        if (IsNeutralAtPeace(pUnit))
+            return true;
+    }
+
+    return false;
+}
+
+// Whether a mob is held by a control that damage breaks. The flag that says so is the one that
+// CanUseCrowdControl() reads before the bot controls a mob itself, because what breaks such a control is damage
+// on the held mob: the control that another party member is keeping is not to be spoiled by the splash of a
+// Whirlwind or of a Sweeping Strikes, which is the damage that those two put on the pack about the bot.
+bool PartyBotAI::IsHeldByDamageBreakingControl(Unit const* pUnit) const
+{
+    if (!pUnit)
+        return false;
+
+    for (auto const& holder : pUnit->GetSpellAuraHolderMap())
+    {
+        if (!holder.second)
             continue;
 
-        if (me->GetReactionTo(pUnit) == REP_NEUTRAL)
+        SpellEntry const* pControl = holder.second->GetSpellProto();
+        if (pControl && pControl->HasAuraInterruptFlag(AURA_INTERRUPT_DAMAGE_CANCELS))
             return true;
     }
 
@@ -1468,15 +1622,7 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
         return false;
     }
 
-    ShapeshiftForm stanceForm = FORM_NONE;
-    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
-    {
-        if (pStance->EffectApplyAuraName[i] == SPELL_AURA_MOD_SHAPESHIFT)
-        {
-            stanceForm = ShapeshiftForm(pStance->EffectMiscValue[i]);
-            break;
-        }
-    }
+    ShapeshiftForm const stanceForm = GetStanceSpellForm(pStance);
 
     if (stanceForm == FORM_NONE || stanceForm == me->GetShapeshiftForm())
     {
@@ -1523,6 +1669,85 @@ bool PartyBotAI::TrySwitchWarriorStance(SpellEntry const* pStance)
     sLog.Out(LOG_BASIC, LOG_LVL_DEBUG, "Party bot %s failed to switch to stance %u: normal %u, triggered %u",
         me->GetName(), pStance->Id, uint32(result), uint32(triggeredResult));
     return false;
+}
+
+// The stance that a damage warrior stands in between the spells that ask for another one: the Berserker Stance
+// for a bot that learned Bloodthirst and did not take Improved Overpower, the Battle Stance for every other
+// damage warrior. Both are read from what the bot knows, because neither the asked talent nor the worn stance is
+// saved with a bot: the one is the spell that the Fury tree gives at its fortieth point, the other the talent of
+// the Arms tree that a build reaches later, and a bot of the levels between them has one without the other.
+SpellEntry const* PartyBotAI::GetWarriorHomeStanceSpell() const
+{
+    bool const wantsBerserkerStance =
+        m_spells.warrior.pBloodthirst && !m_spells.warrior.pImprovedOverpower;
+
+    if (wantsBerserkerStance && m_spells.warrior.pBerserkerStance)
+        return m_spells.warrior.pBerserkerStance;
+
+    // A stance that was never taught is not a stance to keep: the quests of this world give the Berserker Stance
+    // at thirty levels and the defensive and battle stances at ten, and a bot that has one of the two would else
+    // spend every update of its bot asking for a form that it cannot wear.
+    if (m_spells.warrior.pBattleStance)
+        return m_spells.warrior.pBattleStance;
+
+    return m_spells.warrior.pBerserkerStance;
+}
+
+ShapeshiftForm PartyBotAI::GetWarriorHomeStanceForm() const
+{
+    return GetStanceSpellForm(GetWarriorHomeStanceSpell());
+}
+
+// The spell that puts the asked form on the bot, looked up by the form of the spell rather than by its name: the
+// rotation is told which form a spell wants by the data of that spell, and has to find the stance spell that
+// answers it.
+SpellEntry const* PartyBotAI::GetWarriorStanceSpell(ShapeshiftForm askedForm) const
+{
+    if (askedForm == FORM_NONE)
+        return nullptr;
+
+    SpellEntry const* const stances[] = {
+        m_spells.warrior.pBattleStance,
+        m_spells.warrior.pDefensiveStance,
+        m_spells.warrior.pBerserkerStance,
+    };
+
+    for (SpellEntry const* pStance : stances)
+    {
+        if (GetStanceSpellForm(pStance) == askedForm)
+            return pStance;
+    }
+
+    return nullptr;
+}
+
+// Whether the rage that a spell costs is not there. The extra cost is the stance that the spell is to be cast in,
+// which the bot has to pay for as well: the two are asked for together because a change of stance that leaves the
+// bot with nothing to cast is rage spent on nothing. Health is not asked about here: Bloodrage is a spell that
+// costs health rather than rage, and it is the answer that this question is asked for.
+bool PartyBotAI::IsWarriorRageShort(SpellEntry const* pSpellEntry, SpellEntry const* pExtraCost) const
+{
+    if (!pSpellEntry || Powers(pSpellEntry->powerType) != POWER_RAGE)
+        return false;
+
+    uint32 neededCost = Spell::CalculatePowerCost(pSpellEntry, me);
+    if (pExtraCost && Powers(pExtraCost->powerType) == POWER_RAGE)
+        neededCost += Spell::CalculatePowerCost(pExtraCost, me);
+
+    return me->GetPower(POWER_RAGE) < neededCost;
+}
+
+// Bloodrage is the rage that a damage warrior makes for itself, and it is asked for when a want of the rotation
+// is refused by nothing but the rage that it costs. The cast gate refuses the spell of a bot whose health is too
+// low to pay for it, which is where the rotation goes back to its swings instead of buying rage with the little
+// health that is left.
+bool PartyBotAI::TryWarriorBloodrage()
+{
+    if (!m_spells.warrior.pBloodrage)
+        return false;
+
+    return CanTryToCastSpell(me, m_spells.warrior.pBloodrage) &&
+        DoCastSpell(me, m_spells.warrior.pBloodrage) == SPELL_CAST_OK;
 }
 
 static char const* GetWarriorStanceBlockName(uint32 block)
@@ -1619,8 +1844,8 @@ void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
 
     bool const protectionTank = IsProtectionWarriorTank();
     SpellEntry const* pDesired = protectionTank ?
-        m_spells.warrior.pDefensiveStance : m_spells.warrior.pBattleStance;
-    ShapeshiftForm const desiredForm = protectionTank ? FORM_DEFENSIVESTANCE : FORM_BATTLESTANCE;
+        m_spells.warrior.pDefensiveStance : GetWarriorHomeStanceSpell();
+    ShapeshiftForm const desiredForm = GetStanceSpellForm(pDesired);
     Item const* pOffhand = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
 
     std::ostringstream out;
@@ -1669,6 +1894,15 @@ void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
 
     AppendStanceRewardQuests(out, me, missingStances);
 
+    // The two facts that the stance of a damage warrior is made of: the rotation keeps the Berserker Stance while
+    // the bot has one and not the other, and a bot that changed the stance it keeps in the middle of its levels
+    // has taken or not taken one talent. Nothing else about the bot says so, and neither is saved with it.
+    if (!protectionTank)
+    {
+        out << "\n    Bloodthirst: " << (m_spells.warrior.pBloodthirst ? "learned" : "not learned")
+            << ", Improved Overpower: " << (m_spells.warrior.pImprovedOverpower ? "taken" : "not taken");
+    }
+
     out << "\n    the rules ask for: " << GetWarriorStanceFormName(desiredForm);
     if (!pDesired)
     {
@@ -1698,6 +1932,24 @@ void PartyBotAI::PrintWarriorStanceState(ChatHandler& handler) const
             out << ", normal cast result " << m_warriorStanceNormalResult;
         if (m_warriorStanceTriggeredResult != uint32(-1))
             out << ", triggered cast result " << m_warriorStanceTriggeredResult;
+    }
+
+    // An opening of a charge owns the stance of the bot while it stands, and a shield tank that stands in the
+    // Battle Stance out of combat is in it because of that ask and not because of its rules. Which stance was last
+    // asked and why it did not come is read above; whether an opening still stands is what this line answers.
+    out << "\n    charge opening: ";
+    if (m_warriorChargeTargetGuid.IsEmpty())
+        out << "none is standing";
+    else
+    {
+        Unit const* pChargeTarget = me->GetMap() ? me->GetMap()->GetUnit(m_warriorChargeTargetGuid) : nullptr;
+        if (pChargeTarget)
+            out << "standing for " << pChargeTarget->GetName();
+        else
+            out << "standing for a target that is gone";
+
+        out << ", " << int(m_warriorChargeAskRetries) << " of " << PB_WARRIOR_CHARGE_ASK_UPDATES
+            << " updates spent on the stance and its global cooldown";
     }
 
     handler.SendSysMessage(out.str().c_str());
@@ -1782,6 +2034,21 @@ bool PartyBotAI::IsWarriorMockingBlowWanted(Unit const* pTarget) const
         return false;
 
     return pTarget->CanReachWithMeleeAutoAttack(pMember) || pMember->CanReachWithMeleeAutoAttack(pTarget);
+}
+
+// Whether the shield block is asked for the mob that the tank holds. The block blunts the next physical blows
+// landed on the tank, so it is asked for a mob that hurts the party with its body and not with a bar: what a mob
+// mainly does is asked of its own class, the same reading that the battle bot warrior makes before its Shield
+// Block, and a caster mob that walks in and swings once in a while is not what a minute of a cooldown and ten of
+// the rage are spent on. The rage of the block is the rage that Revenge, Shield Slam and Sunder Armor wait for,
+// and against a caster those three do more for the hold than a block that nothing lands on.
+bool PartyBotAI::IsWarriorShieldBlockWanted(Unit const* pVictim) const
+{
+    // The block is an answer to being hit: a tank that nothing is swinging at keeps its rage and its cooldown.
+    if (!pVictim || me->GetAttackers().empty())
+        return false;
+
+    return IsPhysicalDamageClass(pVictim->GetClass());
 }
 
 bool PartyBotAI::TryTauntProtectionWarriorTarget(Unit* pTarget)
@@ -4563,11 +4830,14 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
     m_warriorSecondaryTargetGuid.Clear();
     m_warriorSecondaryHoldTimer.Reset(0);
 
-    bool const protectionTank = IsProtectionWarriorTank();
-    SpellEntry const* pStance = protectionTank ?
-        m_spells.warrior.pDefensiveStance : m_spells.warrior.pBattleStance;
-    ShapeshiftForm const desiredForm = protectionTank ?
-        FORM_DEFENSIVESTANCE : FORM_BATTLESTANCE;
+    // The stance that a warrior wears while it waits with its party is the stance that its rules ask for: the
+    // Defensive Stance for a shield tank, and the stance that the talents of a damage warrior ask for. The stance
+    // of a charge is not asked for here: the opening of a charge is the same for every warrior and belongs to
+    // PartyBotAI::AttackStart, which takes the Battle Stance with it, keeps the target through it, and refuses the
+    // charge of a bot that is in an instance.
+    SpellEntry const* pStance = IsProtectionWarriorTank() ?
+        m_spells.warrior.pDefensiveStance : GetWarriorHomeStanceSpell();
+    ShapeshiftForm const desiredForm = GetStanceSpellForm(pStance);
 
     if (pStance && me->GetShapeshiftForm() != desiredForm)
     {
@@ -4577,30 +4847,14 @@ void PartyBotAI::UpdateOutOfCombatAI_Warrior()
 
     // The shout is made up outside a fight only out of rage that the bot has already and does not need, ten points
     // of it, and never with the health that Bloodrage costs: a bot that waits with its group has no fight ahead of
-    // it that would pay such a price back. The shout of a fight is left to the beginning of that fight, see
-    // PartyBotAI::UpdateInCombatAI_Warrior.
+    // it that would pay such a price back. The shout of a fight is left to the rotation of the fight, see
+    // PartyBotAI::CollectWarriorDamageWants, and to the same rule for the shield tank.
     if (m_spells.warrior.pBattleShout &&
        !me->HasAura(m_spells.warrior.pBattleShout->Id) &&
        (me->GetPower(POWER_RAGE) >= 10 * PB_RAGE_PER_POINT))
     {
         if (CanTryToCastSpell(me, m_spells.warrior.pBattleShout))
             DoCastSpell(me, m_spells.warrior.pBattleShout);
-    }
-
-    // Charge is only asked for here for the warrior that rests in Battle Stance. A shield tank rests in Defensive
-    // Stance, where Charge cannot be cast at all, and its opening belongs to PartyBotAI::AttackStart, which takes
-    // Battle Stance with the charge and keeps the target through it.
-    if (!protectionTank)
-    {
-        if (Unit* pVictim = me->GetVictim())
-        {
-            if (m_spells.warrior.pCharge &&
-                CanTryToCastSpell(pVictim, m_spells.warrior.pCharge))
-            {
-                if (DoCastSpell(pVictim, m_spells.warrior.pCharge) == SPELL_CAST_OK)
-                    return;
-            }
-        }
     }
 }
 
@@ -4757,8 +5011,8 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
             return;
     }
 
-    if (!me->GetAttackers().empty() &&
-        m_spells.warrior.pShieldBlock &&
+    if (m_spells.warrior.pShieldBlock &&
+        IsWarriorShieldBlockWanted(pVictim) &&
         CanTryToCastSpell(me, m_spells.warrior.pShieldBlock))
     {
         if (DoCastSpell(me, m_spells.warrior.pShieldBlock) == SPELL_CAST_OK)
@@ -4812,6 +5066,269 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
         BeginChasing(pVictim);
 }
 
+// What the area about a warrior that a spell of several mobs would step on holds: the red-name mobs of the pack,
+// a neutral at peace that the area would wake, and a mob held by a control that damage breaks. A Whirlwind and a
+// bank of rage for a Sweeping Strikes are both asked for at the pack of the melee, and the two looks that the
+// shield tank already makes before it lets off a shout are the two reasons not to ask for them: the neutral would
+// join a second fight that the party did not start, and the control that another party member is keeping would be
+// spoiled by the damage that the spell puts on the held mob. The count is asked only of the red names, because a
+// neutral that has joined a fight of its own is not a mob that the spell of the warrior was asked for.
+PartyBotAI::WarriorMeleePackRead PartyBotAI::ReadWarriorMeleePack(Unit const* pCenter) const
+{
+    WarriorMeleePackRead read;
+    if (!pCenter)
+        return read;
+
+    std::list<Unit*> nearbyUnits;
+    me->GetEnemyListInRadiusAround(pCenter, PB_WARRIOR_MULTI_MOB_DIST, nearbyUnits);
+
+    for (Unit* pUnit : nearbyUnits)
+    {
+        if (!pUnit)
+            continue;
+
+        if (IsNeutralAtPeace(pUnit))
+            read.neutralAtPeace = true;
+
+        if (IsHeldByDamageBreakingControl(pUnit))
+            read.breakableControl = true;
+
+        if (me->GetReactionTo(pUnit) == REP_HOSTILE)
+            ++read.redCount;
+    }
+
+    return read;
+}
+
+// The rules of the rotation of a damage warrior, in the order the maintainer ranks them. What the bot has learned
+// is part of the rules: a warrior that has neither of its two talent abilities works with the abilities of its
+// weapon and with the armor debuff, and the interrupt of a damage warrior is not its work, so it stands below the
+// abilities of the rotation rather than above them. The gates that the core puts in front of a cast are not
+// repeated here: which rank the bot knows, whether the mob may be hit at all, and whether the spell is off its
+// cooldown belong to the cast gate and to the update below.
+void PartyBotAI::CollectWarriorDamageWants(Unit* pVictim, std::vector<WarriorRotationWant>& wants) const
+{
+    auto AddWant = [&wants](SpellEntry const* pSpell, Unit* pTarget, ShapeshiftForm askedForm,
+        bool canChangeStance, bool keepsRage, bool useForcedCast)
+    {
+        if (!pSpell || !pTarget)
+            return;
+
+        WarriorRotationWant want;
+        want.pSpell = pSpell;
+        want.pTarget = pTarget;
+        want.askedForm = askedForm;
+        want.canChangeStance = canChangeStance;
+        want.keepsRage = keepsRage;
+        want.useForcedCast = useForcedCast;
+        wants.push_back(want);
+    };
+
+    // Berserker Rage is the answer to a fear that holds the bot in the stance that makes its own rage: it takes
+    // the fear off and puts rage on the warrior. It is asked for in that stance only, which is the rule of the
+    // maintainer and not a gate of the spell.
+    if (me->GetShapeshiftForm() == FORM_BERSERKERSTANCE && me->HasAuraType(SPELL_AURA_MOD_FEAR))
+        AddWant(m_spells.warrior.pBerserkerRage, me, FORM_NONE, false, false, false);
+
+    // Death Wish is the burst of the warrior, and it is spent on the mob that is long enough to need it: the same
+    // reading of an elite that the shield tank uses for its Thunder Clap, which is what the client shows as the
+    // skull of a boss and not every mob with an elite frame.
+    if (IsSkullConEliteTarget(pVictim))
+        AddWant(m_spells.warrior.pDeathWish, me, FORM_NONE, false, false, false);
+
+    WarriorMeleePackRead const pack = ReadWarriorMeleePack(me);
+
+    // Sweeping Strikes is the hit of the warrior over the pack of the melee. Where the pack is there, the bot
+    // takes the Battle Stance for it and waits for the rage that the spell costs, spending nothing of that rage on
+    // the wants below: the pack is at its closest in the seconds in which the warrior stands in the middle of it,
+    // and the sweep that never came is what the rage spent elsewhere would have bought. The rage that the spell
+    // wants is the cost that its own data names; the bot does not spend below it until the rage is there, which is
+    // what makes the want a bank rather than an attempt.
+    if (pack.redCount > 1 && !pack.neutralAtPeace && !pack.breakableControl)
+        AddWant(m_spells.warrior.pSweepingStrikes, me, FORM_BATTLESTANCE, true, true, false);
+
+    // Overpower is the answer to a dodge of the mob, and it is only asked for in the Battle Stance and never with
+    // a change of stance: the rage and the global cooldown of a change cost more than the hit of the ability.
+    // Whether the mob is open for it is the state that the data of the spell asks for, and the cast gate refuses
+    // the want where the dodge has not happened.
+    AddWant(m_spells.warrior.pOverpower, pVictim, FORM_BATTLESTANCE, false, false, false);
+
+    // Execute is the finisher of the mob that is going. The threshold below is the one that the rotation has
+    // always asked for; the data of the spell adds its own gate for the ranks that want the mob low. Which stance
+    // the spell belongs to is read from that data by the update below, so a bot that keeps the Berserker Stance
+    // reaches the finisher by a change of stance and takes its own stance back after the cast.
+    if (pVictim->GetHealthPercent() < 20.0f)
+        AddWant(m_spells.warrior.pExecute, pVictim, FORM_NONE, true, false, false);
+
+    // The interrupt stands here rather than at the top of the rotation: the damage that a warrior is late for costs
+    // the party less than the ability that the same global cooldown would have bought. In the Berserker Stance
+    // Pummel is there for nothing; a bot that stands in the Battle Stance changes to the other one only where the
+    // rage for both the change and the spell is there and is not wanted by the abilities of the Battle Stance,
+    // which is what the window of rage below is for.
+    if (pVictim->IsNonMeleeSpellCasted(false, false, true))
+    {
+        uint32 const rage = me->GetPower(POWER_RAGE);
+        if (me->GetShapeshiftForm() == FORM_BERSERKERSTANCE)
+            AddWant(m_spells.warrior.pPummel, pVictim, FORM_NONE, false, false, false);
+        else if (me->GetShapeshiftForm() == FORM_BATTLESTANCE &&
+                 m_spells.warrior.pTacticalMastery &&
+                 rage > uint32(PB_WARRIOR_PUMMEL_STANCE_RAGE_MIN * PB_RAGE_PER_POINT) &&
+                 rage < uint32(PB_WARRIOR_PUMMEL_STANCE_RAGE_MAX * PB_RAGE_PER_POINT))
+            AddWant(m_spells.warrior.pPummel, pVictim, FORM_BERSERKERSTANCE, true, false, false);
+    }
+
+    // The shout of attack strength is for the party and for the fight, so it is asked for while the fight lasts and
+    // not only before it: a party that has been fighting for a minute is a party that lost the shout on the way.
+    // It is never worth a change of stance, and the rage that it costs is the least of the rage the bot spends.
+    if (m_spells.warrior.pBattleShout && !me->HasAura(m_spells.warrior.pBattleShout->Id))
+        AddWant(m_spells.warrior.pBattleShout, me, FORM_NONE, false, false, false);
+
+    // The two abilities of the talent of the bot stand above the rest of its hits, and neither of them asks for a
+    // stance of its own: the stance of the talent was chosen so that the ability of the talent goes off in it, and
+    // a change of stance for one hit of the other stance is the rage of two changes.
+    AddWant(m_spells.warrior.pMortalStrike, pVictim, FORM_NONE, false, false, false);
+    AddWant(m_spells.warrior.pBloodthirst, pVictim, FORM_NONE, false, false, false);
+
+    // Whirlwind is the most damage that the rage of a melee warrior buys at once, and it is asked for where it can
+    // be paid for: the rage of fifty points of it rather than the cost of the spell, because the half of a
+    // Whirlwind is a stance change spent on nothing. The stance is the one the spell wants, and the pack about the
+    // bot must be a pack that the party wants, for the area of the spell takes the neutral at peace into the
+    // fight and puts damage on a mob that another player is holding.
+    if (me->GetPower(POWER_RAGE) >= uint32(PB_WARRIOR_WHIRLWIND_RAGE * PB_RAGE_PER_POINT) &&
+        !pack.neutralAtPeace && !pack.breakableControl)
+        AddWant(m_spells.warrior.pWhirlwind, me, FORM_BERSERKERSTANCE, true, false, false);
+
+    bool const hasTalentAbility = m_spells.warrior.pMortalStrike || m_spells.warrior.pBloodthirst;
+
+    // The bleed and the armor debuff are the work of a warrior that has neither of the two abilities above, and
+    // they are not limited by what the mob already carries: without a talent ability the bot has nothing else to
+    // spend its rage on, and the stacks of the armor debuff are the damage that the party does. The bleed is the
+    // work of the Battle Stance; the debuff belongs to the stance that its own data names, which the bot reaches
+    // by a change of stance and leaves again in the same way.
+    if (!hasTalentAbility)
+    {
+        AddWant(m_spells.warrior.pRend, pVictim, FORM_BATTLESTANCE, false, false, false);
+        AddWant(m_spells.warrior.pSunderArmor, pVictim, FORM_NONE, true, false, true);
+    }
+
+    // The rage that is left over is put into the swing of the bot rather than kept: the rage of a warrior that it
+    // cannot spend on the abilities above is rage that the next swing would have taken anyway. The armor debuff
+    // is the better spend where the bot has it, so the swing is only asked for without that ability.
+    if (!m_spells.warrior.pSunderArmor)
+        AddWant(m_spells.warrior.pHeroicStrike, pVictim, FORM_NONE, false, false, false);
+}
+
+// The rotation of a damage warrior: the wants of the collector above, answered one at a time in their order. The
+// answer is not always a cast. Where the stance that a want asks for is not worn, the answer is the stance; where
+// the rage that it costs is not there, the answer is Bloodrage, which is what makes the bank of a Sweeping
+// Strikes a bank instead of an attempt; and where a want belongs to the stance of the talent, the stance that the
+// bot changed into for one earlier spell is taken back before the want is answered. That last part is what
+// "keeping" a stance means: the change is made for the spell, and the bot does not go on wearing it.
+void PartyBotAI::UpdateWarriorDamageRotation(Unit* pVictim)
+{
+    std::vector<WarriorRotationWant> wants;
+    CollectWarriorDamageWants(pVictim, wants);
+
+    ShapeshiftForm const wornForm = me->GetShapeshiftForm();
+    ShapeshiftForm const homeForm = GetWarriorHomeStanceForm();
+
+    for (auto const& want : wants)
+    {
+        // A want on its own cooldown is not a rule of the stance or of the rage: the bank of a Sweeping Strikes
+        // keeps the rage of the bot only while the spell of the bank is ready to spend it.
+        if (!me->IsSpellReady(want.pSpell))
+            continue;
+
+        // The stance that this want is to be cast in: the one its rule names, and otherwise the one that the data
+        // of the spell asks for when the stance that is worn is refused by that data.
+        ShapeshiftForm askedForm = want.askedForm;
+        if (askedForm == FORM_NONE && want.pSpell->GetErrorAtShapeshiftedCast(wornForm) != SPELL_CAST_OK)
+            askedForm = GetSpellStanceRequirement(want.pSpell);
+
+        if (askedForm != FORM_NONE && askedForm != wornForm)
+        {
+            if (!want.canChangeStance)
+                continue;
+
+            SpellEntry const* pStance = GetWarriorStanceSpell(askedForm);
+            if (!pStance)
+                continue;
+
+            // The change and the spell are paid for together, so that a stance that the bot changed into is not a
+            // stance it stands in with nothing to cast.
+            if (IsWarriorRageShort(want.pSpell, pStance))
+            {
+                if (TryWarriorBloodrage())
+                    return;
+
+                // The rage of an ordinary want is not worth standing on: the wants below are answered in the
+                // stance that the bot wears. The rage that the rotation keeps for one spell is different, and the
+                // bank stands until that rage is there.
+                if (!want.keepsRage)
+                    continue;
+            }
+
+            TrySwitchWarriorStance(pStance);
+            return;
+        }
+
+        // A spell that names no stance is not cast in a stance that the bot changed into for another spell: the
+        // stance of the talent is asked back first, which is the other half of the rule that a change of stance is
+        // made for one spell and taken back after it.
+        // The ask is made for this want only where the want could really be cast in the stance of the talent: a
+        // spell that the data of the spell keeps to the other stance would buy a change of stance that ends with
+        // itself refused, and the next update would change back again. Two stance asks a second, neither of them
+        // with a spell behind it, is worse than a bot that works in the stance it is standing in.
+        if (askedForm == FORM_NONE && homeForm != FORM_NONE && wornForm != homeForm &&
+            want.pSpell->GetErrorAtShapeshiftedCast(homeForm) == SPELL_CAST_OK)
+        {
+            // A refused ask does not end the update: a routine that waits for a stance that is not coming never
+            // runs at all, which is the lesson the shield tank rules already carry. The want below is answered in
+            // the stance that is worn, and the next update asks the stance of the talent back again.
+            if (TrySwitchWarriorStance(GetWarriorHomeStanceSpell()))
+                return;
+        }
+
+        if (IsWarriorRageShort(want.pSpell, nullptr))
+        {
+            if (TryWarriorBloodrage())
+                return;
+
+            if (want.keepsRage)
+                return;
+
+            continue;
+        }
+
+        // The armor debuff is the one spell of the rotation that adds a stack by being cast again while the mob
+        // still carries it, which is what the ordinary gate of the core refuses; the forced cast of the tank is
+        // the same instruction, and the rotation of a damage warrior without a talent ability needs it too.
+        if (want.useForcedCast)
+        {
+            if (TryCastForcedWarriorSunder(want.pTarget))
+                return;
+
+            continue;
+        }
+
+        if (CanTryToCastSpell(want.pTarget, want.pSpell) &&
+            DoCastSpell(want.pTarget, want.pSpell) == SPELL_CAST_OK)
+            return;
+    }
+
+    // Nothing of the rotation is to be done this update: keep the stance of the talent, and stand where a swing of
+    // the bot can reach the target.
+    if (homeForm != FORM_NONE && wornForm != homeForm)
+    {
+        if (TrySwitchWarriorStance(GetWarriorHomeStanceSpell()))
+            return;
+    }
+
+    if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE &&
+        !me->CanReachWithMeleeAutoAttack(pVictim))
+        BeginChasing(pVictim);
+}
+
 void PartyBotAI::UpdateInCombatAI_Warrior()
 {
     if (IsProtectionWarriorTank())
@@ -4825,189 +5342,7 @@ void PartyBotAI::UpdateInCombatAI_Warrior()
     // or for a shield: the skills of a shield tank have one owner, and a rule that waited for either of them here
     // could never be reached.
     if (Unit* pVictim = me->GetVictim())
-    {
-        if (pVictim->IsNonMeleeSpellCasted(false, false, true))
-        {
-            if (m_spells.warrior.pPummel &&
-                CanTryToCastSpell(pVictim, m_spells.warrior.pPummel))
-            {
-                if (DoCastSpell(pVictim, m_spells.warrior.pPummel) == SPELL_CAST_OK)
-                    return;
-            }
-        }
-
-        if (m_spells.warrior.pExecute &&
-           (pVictim->GetHealthPercent() < 20.0f) &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pExecute))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pExecute) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pOverpower &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pOverpower))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pOverpower) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pLastStand &&
-            me->GetHealthPercent() < 20.0f &&
-            CanTryToCastSpell(me, m_spells.warrior.pLastStand))
-        {
-            if (DoCastSpell(me, m_spells.warrior.pLastStand) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pConcussionBlow &&
-           (pVictim->IsNonMeleeSpellCasted() || pVictim->IsMoving() || (me->GetHealthPercent() < 50.0f)) &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pConcussionBlow))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pConcussionBlow) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pHamstring &&
-            pVictim->IsMoving() &&
-           !pVictim->HasUnitState(UNIT_STATE_ROOT) &&
-           !pVictim->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pHamstring))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pHamstring) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pRend &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pRend))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pRend) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pIntimidatingShout &&
-           (me->GetHealthPercent() < 30.0f) &&
-           (GetAttackersInRangeCount(10.0f) > 2) &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pIntimidatingShout))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pIntimidatingShout) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pRetaliation &&
-           (GetAttackersInRangeCount(10.0f) > 2) &&
-            CanTryToCastSpell(me, m_spells.warrior.pRetaliation))
-        {
-            if (DoCastSpell(me, m_spells.warrior.pRetaliation) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pSweepingStrikes &&
-            CanTryToCastSpell(me, m_spells.warrior.pSweepingStrikes) &&
-           (me->GetEnemyCountInRadiusAround(pVictim, 10.0f) > 2))
-        {
-            if (DoCastSpell(me, m_spells.warrior.pSweepingStrikes) == SPELL_CAST_OK)
-                return;
-        }
-
-        if ((me->GetHealthPercent() > 60.0f) && (pVictim->GetHealthPercent() > 40.0f) &&
-           !me->HasUnitState(UNIT_STATE_ROOT) &&
-           !me->IsImmuneToMechanic(MECHANIC_FEAR))
-        {
-            if (m_spells.warrior.pRecklessness &&
-                CanTryToCastSpell(me, m_spells.warrior.pRecklessness))
-            {
-                if (DoCastSpell(me, m_spells.warrior.pRecklessness) == SPELL_CAST_OK)
-                    return;
-            }
-
-            if (m_spells.warrior.pDeathWish &&
-                CanTryToCastSpell(me, m_spells.warrior.pDeathWish))
-            {
-                if (DoCastSpell(me, m_spells.warrior.pDeathWish) == SPELL_CAST_OK)
-                    return;
-            }
-        }
-
-        if (m_spells.warrior.pMortalStrike &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pMortalStrike))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pMortalStrike) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pBloodthirst &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pBloodthirst))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pBloodthirst) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (me->GetHealthPercent() < 20.0f)
-        {
-            if (m_spells.warrior.pDefensiveStance &&
-                CanTryToCastSpell(me, m_spells.warrior.pDefensiveStance))
-            {
-                DoCastSpell(me, m_spells.warrior.pDefensiveStance);
-            }
-        }
-        else
-        {
-            if (m_spells.warrior.pBerserkerStance &&
-                CanTryToCastSpell(me, m_spells.warrior.pBerserkerStance))
-            {
-                DoCastSpell(me, m_spells.warrior.pBerserkerStance);
-            }
-        }
-
-        if (m_spells.warrior.pIntercept &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pIntercept))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pIntercept) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pWhirlwind &&
-            CanTryToCastSpell(me, m_spells.warrior.pWhirlwind))
-        {
-            if (DoCastSpell(me, m_spells.warrior.pWhirlwind) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (m_spells.warrior.pDisarm &&
-            IsMeleeWeaponClass(pVictim->GetClass()) &&
-            CanTryToCastSpell(pVictim, m_spells.warrior.pDisarm))
-        {
-            if (DoCastSpell(pVictim, m_spells.warrior.pDisarm) == SPELL_CAST_OK)
-                return;
-        }
-
-        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE
-            && !me->CanReachWithMeleeAutoAttack(pVictim))
-        {
-            BeginChasing(pVictim);
-        }
-
-        if (me->GetPower(POWER_RAGE) > 300)
-        {
-            if (m_spells.warrior.pCleave && me->GetEnemyCountInRadiusAround(pVictim, 8.0f) > 1)
-            {
-                if (CanTryToCastSpell(pVictim, m_spells.warrior.pCleave))
-                {
-                    if (DoCastSpell(pVictim, m_spells.warrior.pCleave) == SPELL_CAST_OK)
-                        return;
-                }
-            }
-            else
-            {
-                if (m_spells.warrior.pHeroicStrike &&
-                    CanTryToCastSpell(pVictim, m_spells.warrior.pHeroicStrike))
-                {
-                    if (DoCastSpell(pVictim, m_spells.warrior.pHeroicStrike) == SPELL_CAST_OK)
-                        return;
-                }
-            }
-        }
-    }
+        UpdateWarriorDamageRotation(pVictim);
     else // no victim
     {
         if (m_spells.warrior.pBattleShout &&

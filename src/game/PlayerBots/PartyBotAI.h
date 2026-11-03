@@ -99,13 +99,28 @@ public:
     bool IsTankRoleWarrior(Player* pPlayer) const;
     bool IsProtectionWarriorTank() const;
     bool IsOtherPartyMember(Unit const* pTarget) const;
+    // What asking for the opening of a Charge answers. An opening is not one cast but the few updates around it:
+    // the stance that a Charge needs is asked in the first of them, the core applies that stance when the spell
+    // event of the bot runs, and the charge of the same update is refused by the global cooldown and by the spell
+    // of the stance that is still in progress. Only PB_CHARGE_REFUSED gives the opening up; the other answers keep
+    // it, which is what a target that stands within the charge range from the beginning used to be missing.
+    enum WarriorChargeAsk
+    {
+        PB_CHARGE_CAST,                     // the charge went off, the opening is over
+        PB_CHARGE_APPROACH,                 // the target is outside the charge range: walk to it and ask again
+        PB_CHARGE_LATER,                    // this update cannot cast it: the ask stands for the next one
+        PB_CHARGE_REFUSED,                  // no charge opening: the target is taken the ordinary way
+    };
     bool CanOpenWarriorCombatWithCharge() const;
-    bool TryChargeWarriorTarget(Unit* pTarget);
+    WarriorChargeAsk TryChargeWarriorTarget(Unit* pTarget);
+    bool CanAskWarriorChargeLater();
+    void ClearWarriorChargeOpening();
     bool TryContinueWarriorCharge();
     bool UpdateProtectionWarriorTankTarget();
     bool TryTauntProtectionWarriorTarget(Unit* pTarget);
     bool HasWarriorMockingBlowReady() const;
     bool IsWarriorMockingBlowWanted(Unit const* pTarget) const;
+    bool IsWarriorShieldBlockWanted(Unit const* pVictim) const;
     void UpdateProtectionWarriorTankCombat();
     bool TrySwitchWarriorStance(SpellEntry const* pStance);
     void PrintWarriorStanceState(ChatHandler& handler) const;
@@ -115,7 +130,49 @@ public:
     bool IsSkullConEliteTarget(Unit const* pTarget) const;
     bool HasDemoralizingShoutDebuff(Unit const* pTarget) const;
     bool HasWakingNeutralNear(Unit const* pCenter, float radius) const;
+    bool IsNeutralAtPeace(Unit const* pUnit) const;
+    bool IsHeldByDamageBreakingControl(Unit const* pUnit) const;
     uint32 GetTacticalMasteryRank() const;
+    // The stance that a damage warrior stands in between the spells that ask for another one. Which stance that
+    // is comes from what the bot knows, because neither the asked talent nor the stance is saved with a bot.
+    SpellEntry const* GetWarriorHomeStanceSpell() const;
+    ShapeshiftForm GetWarriorHomeStanceForm() const;
+    SpellEntry const* GetWarriorStanceSpell(ShapeshiftForm askedForm) const;
+    bool IsWarriorRageShort(SpellEntry const* pSpellEntry, SpellEntry const* pExtraCost) const;
+    bool TryWarriorBloodrage();
+    // What one update of the rotation of a damage warrior is to do. The rules of the rotation are collected in
+    // the order the maintainer ranks them, and the update answers them one at a time, because the answer to a
+    // want that the stance or the rage refuses is a stance or Bloodrage rather than the next want.
+    struct WarriorRotationWant
+    {
+        SpellEntry const* pSpell = nullptr;
+        Unit* pTarget = nullptr;
+        // The stance this want is to be cast in, FORM_NONE when the want does not care which stance is worn.
+        // Where no stance is named, the stance that the data of the spell asks for is used, so that a spell of
+        // another stance is reached by changing stance instead of by a table of which ability wants which form.
+        ShapeshiftForm askedForm = FORM_NONE;
+        // False when the want is only to be done in the stance the bot already wears: a change of stance costs
+        // rage and a global cooldown, and some wants are not worth both.
+        bool canChangeStance = true;
+        // True while the rotation is to keep its rage for this want: the rage that the want costs is waited for
+        // rather than spent on the wants below it, which is what a bank of rage for one spell is.
+        bool keepsRage = false;
+        // True for the one spell that adds a stack of its debuff by being cast again while the mob still carries
+        // it: the ordinary cast gate refuses that second cast, and the want is answered by the forced cast that
+        // the shield tank uses for the same reason.
+        bool useForcedCast = false;
+    };
+    // What the area about a warrior that a spell of several mobs would step on holds: the mobs that are simply
+    // hostile, a neutral at peace that the spell would wake, and a mob held by a control that damage breaks.
+    struct WarriorMeleePackRead
+    {
+        uint8 redCount = 0;
+        bool neutralAtPeace = false;
+        bool breakableControl = false;
+    };
+    WarriorMeleePackRead ReadWarriorMeleePack(Unit const* pCenter) const;
+    void CollectWarriorDamageWants(Unit* pVictim, std::vector<WarriorRotationWant>& wants) const;
+    void UpdateWarriorDamageRotation(Unit* pVictim);
     bool IsTargetedByHostile() const;
     Unit* SelectDispelTargetWithPet(SpellEntry const* pSpellEntry) const;
     SpellEntry const* SelectPrayerOfHealing() const;
@@ -165,6 +222,12 @@ public:
     bool m_rogueVanishRetreat = false;
     ObjectGuid m_rogueStealthTargetGuid;
     ObjectGuid m_warriorChargeTargetGuid;
+    // How often the opening of a charge has been refused by a stance that is not worn yet or by the global
+    // cooldown of that stance, and may be asked again. The window is bounded because a tank that waits at the
+    // edge of the charge range while its party fights is worse than a tank that walks in; one update of a party
+    // bot is PB_UPDATE_INTERVAL, a second. The count starts with the opening and is spent only by
+    // PartyBotAI::CanAskWarriorChargeLater().
+    uint8 m_warriorChargeAskRetries = 0;
     ObjectGuid m_warriorPrimaryTargetGuid;
     ObjectGuid m_warriorSecondaryTargetGuid;
     // How long the tank still keeps a mob that was beating another party member. The timer runs down only in an

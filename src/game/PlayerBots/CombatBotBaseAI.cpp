@@ -216,6 +216,20 @@ void CombatBotBaseAI::PopulateSpellData()
     bool hasWoundPoison = false;
     bool HasMindNumbingPoison = false;
 
+    // A passive talent gives no spell of its own and is only to be seen in the spell map of the character, and
+    // the rules that read one want its best rank rather than the first rank the loop happens to meet: the rank
+    // of a talent is what a bot has spent points on.
+    auto KeepBestTalentRank = [](SpellEntry const*& pOldRank, SpellEntry const* pNewRank)
+    {
+        if (!pNewRank)
+            return;
+
+        if (!pOldRank ||
+            pNewRank->GetRank() > pOldRank->GetRank() ||
+            (pNewRank->GetRank() == pOldRank->GetRank() && pNewRank->Id > pOldRank->Id))
+            pOldRank = pNewRank;
+    };
+
     for (const auto& spell : me->GetSpellMap())
     {
         if (spell.second.disabled)
@@ -228,17 +242,17 @@ void CombatBotBaseAI::PopulateSpellData()
         if (!pSpellEntry)
             continue;
 
-        // Tactical Mastery is a passive talent, and its rank is what the tank
-        // keeps of its rage through a stance change. The rules of the tank do not
-        // wait for that rank any more, but `.partybot stance' prints it: the rank
-        // says why a stance change left the tank with nothing to cast.
-        if (me->GetClass() == CLASS_WARRIOR &&
-            pSpellEntry->SpellName[0] == "Tactical Mastery" &&
-            (!m_spells.warrior.pTacticalMastery ||
-             pSpellEntry->GetRank() > m_spells.warrior.pTacticalMastery->GetRank() ||
-             (pSpellEntry->GetRank() == m_spells.warrior.pTacticalMastery->GetRank() &&
-              pSpellEntry->Id > m_spells.warrior.pTacticalMastery->Id)))
-            m_spells.warrior.pTacticalMastery = pSpellEntry;
+        // Tactical Mastery is the rage that a tank keeps through a stance change. The rules of the tank do not
+        // wait for that rank any more, but `.partybot stance' prints it: the rank says why a stance change left
+        // the tank with nothing to cast. Improved Overpower is the talent of the Arms tree that makes a damage
+        // warrior want the Battle Stance back, and the stance rules read whether it was taken at all.
+        if (me->GetClass() == CLASS_WARRIOR)
+        {
+            if (pSpellEntry->SpellName[0] == "Tactical Mastery")
+                KeepBestTalentRank(m_spells.warrior.pTacticalMastery, pSpellEntry);
+            else if (pSpellEntry->SpellName[0] == "Improved Overpower")
+                KeepBestTalentRank(m_spells.warrior.pImprovedOverpower, pSpellEntry);
+        }
 
         if (pSpellEntry->HasAttribute(SPELL_ATTR_PASSIVE))
             continue;
