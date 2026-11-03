@@ -4502,6 +4502,24 @@ void PartyBotAI::UpdateProtectionWarriorTankCombat()
             return;
     }
 
+    // The survival of the shield tank, at the thresholds of the maintainer: Last Stand at thirty per cent of the
+    // health of the bot or below, Shield Wall at twenty per cent or below, both only in combat. Neither of them
+    // ends the update: they cost no rage and no stance, so a tank that puts one of them up keeps its target, its
+    // taunt, its rotation and its chase, exactly as it would without the rule here. Last Stand is asked for first
+    // because its threshold is the higher one, which is also the order in which a player keeps the longer cooldown
+    // for later.
+    if (me->IsInCombat() &&
+        me->GetHealthPercent() <= 30.0f &&
+        m_spells.warrior.pLastStand &&
+        CanTryToCastSpell(me, m_spells.warrior.pLastStand))
+        DoCastSpell(me, m_spells.warrior.pLastStand);
+
+    if (me->IsInCombat() &&
+        me->GetHealthPercent() <= 20.0f &&
+        m_spells.warrior.pShieldWall &&
+        CanTryToCastSpell(me, m_spells.warrior.pShieldWall))
+        DoCastSpell(me, m_spells.warrior.pShieldWall);
+
     std::list<Unit*> nearbyEnemies;
     me->GetEnemyListInRadiusAround(pVictim, 10.0f, nearbyEnemies);
     uint8 hostileEnemyCount = 0;

@@ -309,6 +309,12 @@ document and the code in step - it is what the maintainer reads to tune the valu
     melee reach, and answers false so that the rotation still runs. Where a second owner asked for another stance,
     the Defensive Stance was taken away on one update and asked back on the next, both updates stopped at the stance,
     and a shield tank stayed in the stance of its charge without a Taunt or a Sunder Armor.
+    The survival of that tank is a rule of its own, asked for only in combat and without ending the update: Last
+    Stand at thirty per cent of the health of the bot or below, Shield Wall at twenty per cent or below. Neither
+    spell costs rage nor belongs to a stance, so a tank that puts one of them up keeps its target, its taunt, its
+    rotation and its chase; the global cooldown that the core shares between the spells of one caster is all that
+    can move one of them to a later update. Last Stand is asked for first because its threshold is the higher one,
+    which keeps the longer cooldown for later.
 
 18. A warrior is under the shield tank rules when it wears a shield, or when it carries the tank role without a
     shield (`IsProtectionWarriorTank()`): the Defensive Stance, the taunts and the target handoff of a tank must not
