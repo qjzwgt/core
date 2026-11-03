@@ -599,8 +599,6 @@ void BattleBotAI::UpdateAI(uint32 const diff)
         }
 
         LearnPremadeSpecForClass();
-        LearnTrainerSpellsForLevel();
-        LearnQuestRewardSpellsForLevel();
 
         if (m_role == ROLE_INVALID)
             AutoAssignRole();

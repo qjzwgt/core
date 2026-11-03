@@ -226,18 +226,27 @@ document and the code in step - it is what the maintainer reads to tune the valu
    Sprint is used only in combat with the target over twenty yards away. Blind remains the control-marked spell and
    the reaction to another attacker on the party.
 
-   New party and battle bots, party bots loaded from the database, and party bots that level up learn the ordinary
-   trainer spells of their current level, and the reward spells of the quests of their class and race come with
-   them. Both syncs run again only when the level changes. Some abilities of a class are taught by a quest and not
-   by a trainer - in 1.12 the defensive and the berserker stance of a warrior are the reward of class training
-   quests, and a warrior that has not learned them can not put on the stance of a tank - and a bot has no quest log
-   to be rewarded by them in the ordinary way, so `LearnQuestRewardSpellsForLevel()` reads `quest_template`
-   instead: a quest teaches the bot when its `RequiredClasses` and `RequiredRaces` include the bot, when its
-   `MinLevel` is reached, and when the reward belongs to the class of the bot (the spell family of the reward, or
-   the quest of one class with a reward that is not a spell of another class). `MaxLevel` of a quest is not asked
-   for: it says who may start such a quest, not who may know its reward, and a bot created at the top level must
-   still have the abilities of its class. A spell that a talent brings and a higher rank whose rank below it is
-   unknown are left out, as are spells that `SkillLineAbility.dbc` teaches at a higher level than the bot has.
+   New party and battle bots, party bots loaded from the database, and party bots that level up synchronise every
+   source of a class ability for their current level: the ordinary trainer spells, the build that spends their
+   talent points, the reward spells of the quests of their class and race, and the class spells that usable items
+   teach. `LearnSpellsForLevel()` owns the order. The trainer and quest spells come first because a talent can
+   depend on one, the talent build comes next, the items follow because an item can require a talent spell, and a
+   second talent pass takes any point that an item has just unlocked and then puts a point that the build can not
+   use into the tree of the talent. Each source runs once per level.
+   Some abilities of a class are taught by a quest and not by a trainer - in 1.12 the defensive and the berserker
+   stance of a warrior are the reward of class training quests, and a warrior that has not learned them can not put
+   on the stance of a tank - and a bot has no quest log to be rewarded by them in the ordinary way, so
+   `LearnQuestRewardSpellsForLevel()` reads `quest_template` instead: a quest teaches the bot when its
+   `RequiredClasses` and `RequiredRaces` include the bot, when its `MinLevel` is reached, and when the reward
+   belongs to the class of the bot (the spell family of the reward, or the quest of one class with a reward that is
+   not a spell of another class). `MaxLevel` of a quest is not asked for: it says who may start such a quest, not
+   who may know its reward, and a bot created at the top level must still have the abilities of its class. A spell
+   that a talent brings and a higher rank whose rank below it is unknown are left out, as are spells that
+   `SkillLineAbility.dbc` teaches at a higher level than the bot has.
+   `LearnItemSpellsForLevel()` uses the same all-items pass as the GM command. An item is skipped when it is not
+   obtainable, when the bot can not use it at its class, race, level or proficiency, when its on-use spell is not a
+   learn spell, or when the taught spell has no `SkillLineAbility` row. A bot has no profession, so profession
+   recipes stay out, while class skill books enter at the level of their item.
 
 14. A party bot that has no target of its own first assists the current target of another group member within fifty
     yards, before it considers the units that are only attacking that member. Having a target is enough here because

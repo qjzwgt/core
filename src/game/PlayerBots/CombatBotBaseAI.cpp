@@ -2487,6 +2487,21 @@ bool CombatBotBaseAI::LearnTrainerSpellsForLevel()
     return true;
 }
 
+// A player reads a book from the trainer, a vendor, a dungeon or a quest. The all-items command walks the item
+// prototypes and learns only the on-use spell that triggers another spell, but the item still has to be usable by
+// this class, race and level and the taught spell has to belong to a skill line. The profession recipes therefore
+// stay out because a bot never learns a profession, while a skill book that appears at its level comes in.
+bool CombatBotBaseAI::LearnItemSpellsForLevel()
+{
+    if (me->GetLevel() == m_itemTaughtLevel)
+        return false;
+
+    m_itemTaughtLevel = me->GetLevel();
+    char itemArgs[] = "";
+    ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
+    return true;
+}
+
 // The spells that the reward of a quest gives to a character. A quest names either the spell itself or a spell
 // that the reward casts on the character, and a spell that teaches another one is not a spell a character knows,
 // so what is collected is the spell that its learn effect triggers. Both names of the quest are read, as the core
@@ -2608,8 +2623,85 @@ bool CombatBotBaseAI::LearnQuestRewardSpell(uint32 spellId, uint32 spellFamily, 
     return true;
 }
 
+// The points of a bot are spent in the same build that it was summoned with. A bot loaded from the database no
+// longer has m_requestedTalentPage, so the build that its learned talents complete names the page before the role
+// falls back to the first build of that role. The final pass puts a point that no row of the build can take into the
+// tree of the talent, rather than leaving the bot with a free point.
+bool CombatBotBaseAI::LearnTalentSpellsForLevel(bool retryAtSameLevel, bool spendLeftoverPoints)
+{
+    if (me->GetLevel() == m_talentTaughtLevel && !retryAtSameLevel)
+        return false;
+
+    uint8 talentPage = m_requestedTalentPage;
+    if (talentPage >= MAX_GEAR_SPEC_TABS && !GetLearnedTalentBuildPage(me, talentPage))
+    {
+        uint8 rolePage = MAX_GEAR_SPEC_TABS;
+        if (GetSpecTalentPageForRole(me->GetClass(), m_role, rolePage))
+            talentPage = rolePage;
+    }
+
+    if (talentPage >= MAX_GEAR_SPEC_TABS)
+        return false;
+
+    m_talentTaughtLevel = me->GetLevel();
+    bool learned = LearnTalentsFromBuild(talentPage);
+
+    // Without a row in the table the tree of an explicitly asked talent is filled in the order the tree lists it.
+    if (!learned && m_requestedTalentPage < MAX_GEAR_SPEC_TABS)
+    {
+        uint32 talentTab = 0;
+        if (GetClassTalentTab(me->GetClass(), m_requestedTalentPage, talentTab))
+        {
+            LearnTalentsInTab(talentTab, false);
+            learned = true;
+        }
+    }
+
+    if (!learned)
+        return false;
+
+    // A step can leave points behind when its talent asks for a spell that another source has not taught yet. This
+    // is done only after the item pass, so a skill book that the talent depends on has had its chance to teach it.
+    if (spendLeftoverPoints && me->GetFreeTalentPoints())
+    {
+        uint32 leftTab = 0;
+        if (GetClassTalentTab(me->GetClass(), talentPage, leftTab))
+            LearnTalentsInTab(leftTab, false);
+    }
+
+    return true;
+}
+
+// The four sources are ordered by their dependencies: trainer and quest abilities can be what a talent depends on,
+// a talent can give the spell that an item requires, and a skill book can be the prerequisite of a later talent.
+// The second talent pass takes the points that one of the other sources has just unlocked. Each source remembers the
+// level it was synchronised for, so this is safe to ask on every initialisation and level-up.
+bool CombatBotBaseAI::LearnSpellsForLevel()
+{
+    bool learned = false;
+    bool const talentLevelChanged = me->GetLevel() != m_talentTaughtLevel;
+
+    if (LearnTrainerSpellsForLevel())
+        learned = true;
+    if (LearnQuestRewardSpellsForLevel())
+        learned = true;
+    if (LearnTalentSpellsForLevel())
+        learned = true;
+    if (LearnItemSpellsForLevel())
+        learned = true;
+
+    if (talentLevelChanged && me->GetFreeTalentPoints() && LearnTalentSpellsForLevel(true, true))
+        learned = true;
+
+    return learned;
+}
+
 void CombatBotBaseAI::LearnPremadeSpecForClass()
 {
+    // The trainer and quest spell sets come before the first talent pass, because a talent can name one of them as
+    // its prerequisite. The legacy premade template below runs after this first synchronisation as well.
+    LearnSpellsForLevel();
+
     // The talent of the bot: the one that `.partybot add <abbreviation>` asked for, or the one that the role of
     // the bot has for its class. The premade templates are chosen by role and not by talent, and the gear is
     // rated for the talents that the bot has, so a bot of a known talent learns the build of that talent
@@ -2643,24 +2735,9 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
 
         if (learned)
         {
-            // The rows of the table are the whole build, but a step can not be taken at all: Talent.dbc gives a
-            // talent fewer ranks than the row asks for, or the talent that a step asks for is not in the build.
-            // The points that such a row leaves behind go to the tree of the talent, in the order the tree lists
-            // its talents, rather than staying unspent; see LearnTalentsFromBuild() for the steps that are only
-            // locked for the moment they come.
-            if (me->GetFreeTalentPoints())
-            {
-                uint32 leftTab = 0;
-                if (GetClassTalentTab(me->GetClass(), talentPage, leftTab))
-                    LearnTalentsInTab(leftTab, false);
-            }
-
-            // The spells of the trainers, of the quests and of the items come after the talents, as in the
-            // fallback below.
-            char itemArgs[] = "";
-            LearnTrainerSpellsForLevel();
-            LearnQuestRewardSpellsForLevel();
-            ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
+            // The spells of the trainers, quests, items and the points that a dependency left behind come after
+            // the first talent pass, as in the fallback below.
+            LearnSpellsForLevel();
             return;
         }
     }
@@ -2706,13 +2783,10 @@ void CombatBotBaseAI::LearnPremadeSpecForClass()
     }
     else
     {
-        // Use gm command to learn spells on trainers and items.
         LearnRandomTalents();
-        LearnTrainerSpellsForLevel();
-        LearnQuestRewardSpellsForLevel();
-        char itemArgs[] = "";
-        ChatHandler(me).HandleLearnAllItemsCommand(itemArgs);
     }
+
+    LearnSpellsForLevel();
 }
 
 void CombatBotBaseAI::LearnRandomTalents()

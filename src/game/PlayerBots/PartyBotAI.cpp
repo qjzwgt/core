@@ -2097,11 +2097,12 @@ void PartyBotAI::UpdateAI(uint32 const diff)
             me->TeleportTo(m_mapId, m_x, m_y, m_z, m_o);
         }
 
+        // A new bot and a bot loaded from the database take every class ability of their level from the same four
+        // sources: the trainer, quest rewards, the build of their talent and the usable skill books.
+        LearnSpellsForLevel();
+
         // The riding skill and the mount of the bot's own race or class, for a bot created at the level that asks
         // for them and for a bot that was saved as a rider already: what the bot knows is left as it is.
-        LearnTrainerSpellsForLevel();
-        // The abilities that the class training quests of the level teach, which no trainer sells.
-        LearnQuestRewardSpellsForLevel();
         LearnRidingAndMounts();
 
         ResetSpellData();
@@ -2374,15 +2375,11 @@ void PartyBotAI::UpdateAI(uint32 const diff)
 
     if (!me->IsInCombat())
     {
-        // The party and its bots grow together while it plays, and the bot that has come to the level of a mount
-        // takes the riding and the summon of that rank here, out of the way of a fight and on the walk. Nothing is
-        // asked of the bot whose level has not moved, and a bot that is called into the fight before it has its
-        // mount gets it on the next step that it takes on foot.
-        bool newSpells = LearnTrainerSpellsForLevel();
-        // A warrior that reaches the level of its class training quests takes the stances of those quests here,
-        // which is what lets it tank in the defensive stance instead of wearing the stance of its charge.
-        if (LearnQuestRewardSpellsForLevel())
-            newSpells = true;
+        // The party and its bots grow together while it plays. A new level can bring trainer ranks, a quest reward,
+        // a skill book and a talent point at once, so every source is synchronised here, out of the way of a fight
+        // and on the walk. Nothing is asked of a source whose level has not moved, and a bot that is called into the
+        // fight before it takes this step gets the abilities on the next step that it takes on foot.
+        bool newSpells = LearnSpellsForLevel();
 
         if (newSpells)
         {

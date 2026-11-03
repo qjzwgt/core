@@ -23,8 +23,9 @@ when it has learned none.
 the talent page to learn (`gearSpecAliases` in `BotGearScoring.cpp`, matched by `GetBotGearSpecAlias()`).
 `CombatBotBaseAI::LearnPremadeSpecForClass()` learns the build of that talent instead of looking for a premade
 template - those are chosen by role and not by talent - and then learns the spells of the trainers and of the items,
-as it does when there is no template. The rating keeps the asked talent page, which is also what tells the cat from
-the bear on the feral page of the druid.
+the reward spells of its class quests and the remaining points of its talent build, as it does when there is no
+template. The rating keeps the asked talent page, which is also what tells the cat from the bear on the feral page of
+the druid.
 
 ## The talents that a bot learns
 
