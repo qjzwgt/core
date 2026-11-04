@@ -3,6 +3,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Group.h"
+#include "Map.h"
 #include "PlayerBotMgr.h"
 #include "Opcodes.h"
 #include "WorldPacket.h"
@@ -56,9 +57,23 @@ enum CombatBotSpells
     PET_HYENA   = 4127,
 };
 
-void CombatBotBaseAI::AutoAssignRole()
+// How long a paladin bot waits before it starts its own group blessings when another paladin of the group is
+// blessing it, so that the two of them do not spend their global cooldowns on the same member. It is longer
+// than the time one paladin takes to put a blessing on a group.
+#define PB_PALADIN_BUFF_CONFLICT_WAIT_S 20
+// How long one round of group blessings runs. While a round is open the bot goes on with the members that are
+// still missing a blessing and does not look for another paladin about the group again; when it closes, the
+// next member that the bot blesses opens a round and the conflict is looked at again.
+#define PB_PALADIN_BUFF_ROUND_S 30
+
+// The role that the spells of a player say, which is what the role of a bot is decided from and what a
+// blessing is asked for another member of the group by: the signature spells that only one talent of a class
+// teaches, and for a warrior the shield that it wears and the build its talent points were spent in. Nothing
+// else about a character says which of the talents of its class it plays, and a player that is not a bot of
+// this subsystem has nothing else to be asked.
+CombatBotRoles CombatBotBaseAI::ReadPlayerRole(Player* pPlayer) const
 {
-    switch (me->GetClass())
+    switch (pPlayer->GetClass())
     {
         case CLASS_WARRIOR:
         {
@@ -72,66 +87,64 @@ void CombatBotBaseAI::AutoAssignRole()
             // were learned from says the talent of the bot that has no shield to read. The last page of a
             // warrior is its protection tree, the same numbering of the pages that GetBotGearSpec reads.
             uint8 talentPage = MAX_GEAR_SPEC_TABS;
-            if (IsWearingShield(me) ||
-                (GetLearnedTalentBuildPage(me, talentPage) && talentPage == 2))
-                m_role = ROLE_TANK;
-            else
-                m_role = ROLE_MELEE_DPS;
-            return;
+            if (IsWearingShield(pPlayer) ||
+                (GetLearnedTalentBuildPage(pPlayer, talentPage) && talentPage == 2))
+                return ROLE_TANK;
+
+            return ROLE_MELEE_DPS;
         }
         case CLASS_ROGUE:
         {
-            m_role = ROLE_MELEE_DPS;
-            return;
+            return ROLE_MELEE_DPS;
         }
         case CLASS_HUNTER:
         case CLASS_MAGE:
         case CLASS_WARLOCK:
         {
-            m_role = ROLE_RANGE_DPS;
-            return;
+            return ROLE_RANGE_DPS;
         }
         case CLASS_PALADIN:
         {
-            if (me->HasSpell(SPELL_HOLY_SHIELD))
-                m_role = ROLE_TANK;
-            else if (me->HasSpell(SPELL_SANCTITY_AURA))
-                m_role = ROLE_MELEE_DPS;
-            else
-                m_role = ROLE_HEALER;
-            return;
+            if (pPlayer->HasSpell(SPELL_HOLY_SHIELD))
+                return ROLE_TANK;
+            if (pPlayer->HasSpell(SPELL_SANCTITY_AURA))
+                return ROLE_MELEE_DPS;
+
+            return ROLE_HEALER;
         }
         case CLASS_PRIEST:
         {
-            if (me->HasSpell(SPELL_SHADOWFORM))
-                m_role = ROLE_RANGE_DPS;
-            else
-                m_role = ROLE_HEALER;
-            return;
+            if (pPlayer->HasSpell(SPELL_SHADOWFORM))
+                return ROLE_RANGE_DPS;
+
+            return ROLE_HEALER;
         }
         case CLASS_SHAMAN:
         {
-            if (me->HasSpell(SPELL_ELEMENTAL_MASTERY))
-                m_role = ROLE_RANGE_DPS;
-            else if (me->HasSpell(SPELL_STORMSTRIKE))
-                m_role = ROLE_MELEE_DPS;
-            else
-                m_role = ROLE_HEALER;
-            return;
+            if (pPlayer->HasSpell(SPELL_ELEMENTAL_MASTERY))
+                return ROLE_RANGE_DPS;
+            if (pPlayer->HasSpell(SPELL_STORMSTRIKE))
+                return ROLE_MELEE_DPS;
+
+            return ROLE_HEALER;
         }
         case CLASS_DRUID:
         {
-            if (me->HasSpell(SPELL_MOONKIN_FORM))
-                m_role = ROLE_RANGE_DPS;
-            else if (me->HasSpell(SPELL_LEADER_OF_THE_PACK))
-                m_role = ROLE_MELEE_DPS;
-            else
-                m_role = ROLE_HEALER;
-            return;
+            if (pPlayer->HasSpell(SPELL_MOONKIN_FORM))
+                return ROLE_RANGE_DPS;
+            if (pPlayer->HasSpell(SPELL_LEADER_OF_THE_PACK))
+                return ROLE_MELEE_DPS;
+
+            return ROLE_HEALER;
         }
     }
 
-    m_role = ROLE_MELEE_DPS;
+    return ROLE_MELEE_DPS;
+}
+
+void CombatBotBaseAI::AutoAssignRole()
+{
+    m_role = ReadPlayerRole(me);
 }
 
 void CombatBotBaseAI::ResetSpellData()
@@ -152,12 +165,15 @@ void CombatBotBaseAI::PopulateSpellData()
     SpellEntry const* pSealOfCommand = nullptr;
     SpellEntry const* pSealOfFury = nullptr;
 
-    // Paladin Blessings
-    SpellEntry const* pBlessingOfLight = nullptr;
+    // Paladin Blessings: the three that a paladin brings to a group, in the ordinary rank of the open world and
+    // in the greater rank that a group going into a dungeon or a raid is served with. The utility blessings of a
+    // paladin are read into m_spells.paladin by the loop below, as they were.
+    SpellEntry const* pGreaterBlessingOfKings = nullptr;
+    SpellEntry const* pGreaterBlessingOfWisdom = nullptr;
+    SpellEntry const* pGreaterBlessingOfMight = nullptr;
     SpellEntry const* pBlessingOfMight = nullptr;
     SpellEntry const* pBlessingOfWisdom = nullptr;
     SpellEntry const* pBlessingOfKings = nullptr;
-    SpellEntry const* pBlessingOfSanctuary = nullptr;
 
     // Paladin Auras
     SpellEntry const* pDevotionAura = nullptr;
@@ -311,10 +327,23 @@ void CombatBotBaseAI::PopulateSpellData()
                     if (IsHigherRankSpell(m_spells.paladin.pBlessingOfProtection))
                         m_spells.paladin.pBlessingOfProtection = pSpellEntry;
                 }
-                else if (pSpellEntry->SpellName[0].find("Blessing of Sanctuary") != std::string::npos)
+                // The greater blessings are asked for before the ordinary ones, because the name of every one of
+                // them contains the name of the ordinary blessing of the same kind. Their ranks are numbered in
+                // their own family, so the two are kept apart here rather than compared with each other.
+                else if (pSpellEntry->SpellName[0].find("Greater Blessing of Kings") != std::string::npos)
                 {
-                    if (IsHigherRankSpell(pBlessingOfSanctuary))
-                        pBlessingOfSanctuary = pSpellEntry;
+                    if (IsHigherRankSpell(pGreaterBlessingOfKings))
+                        pGreaterBlessingOfKings = pSpellEntry;
+                }
+                else if (pSpellEntry->SpellName[0].find("Greater Blessing of Wisdom") != std::string::npos)
+                {
+                    if (IsHigherRankSpell(pGreaterBlessingOfWisdom))
+                        pGreaterBlessingOfWisdom = pSpellEntry;
+                }
+                else if (pSpellEntry->SpellName[0].find("Greater Blessing of Might") != std::string::npos)
+                {
+                    if (IsHigherRankSpell(pGreaterBlessingOfMight))
+                        pGreaterBlessingOfMight = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Blessing of Kings") != std::string::npos)
                 {
@@ -330,11 +359,6 @@ void CombatBotBaseAI::PopulateSpellData()
                 {
                     if (IsHigherRankSpell(pBlessingOfMight))
                         pBlessingOfMight = pSpellEntry;
-                }
-                else if (pSpellEntry->SpellName[0].find("Blessing of Light") != std::string::npos)
-                {
-                    if (IsHigherRankSpell(pBlessingOfLight))
-                        pBlessingOfLight = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Devotion Aura") != std::string::npos)
                 {
@@ -1694,24 +1718,12 @@ void CombatBotBaseAI::PopulateSpellData()
             else
                 m_spells.paladin.pSeal = pSealOfRighteousness;
 
-            if (pBlessingOfSanctuary && m_role == ROLE_TANK)
-                m_spells.paladin.pBlessingBuff = pBlessingOfSanctuary;
-            else
-            {
-                std::vector<SpellEntry const*> blessings;
-                if (pBlessingOfLight)
-                    blessings.push_back(pBlessingOfLight);
-                if (pBlessingOfMight)
-                    blessings.push_back(pBlessingOfMight);
-                if (pBlessingOfWisdom)
-                    blessings.push_back(pBlessingOfWisdom);
-                if (pBlessingOfKings)
-                    blessings.push_back(pBlessingOfKings);
-                if (pBlessingOfSanctuary)
-                    blessings.push_back(pBlessingOfSanctuary);
-                if (!blessings.empty())
-                    m_spells.paladin.pBlessingBuff = SelectRandomContainerElement(blessings);
-            }
+            m_spells.paladin.pBlessingOfKings = pBlessingOfKings;
+            m_spells.paladin.pBlessingOfWisdom = pBlessingOfWisdom;
+            m_spells.paladin.pBlessingOfMight = pBlessingOfMight;
+            m_spells.paladin.pGreaterBlessingOfKings = pGreaterBlessingOfKings;
+            m_spells.paladin.pGreaterBlessingOfWisdom = pGreaterBlessingOfWisdom;
+            m_spells.paladin.pGreaterBlessingOfMight = pGreaterBlessingOfMight;
 
             std::vector<SpellEntry const*> auras;
             if (pDevotionAura)
@@ -2391,6 +2403,194 @@ Player* CombatBotBaseAI::SelectBuffTarget(SpellEntry const* pSingleSpellEntry, S
         pSelectedSpellEntry = pSingleSpellEntry;
 
     return pFirstMissingMember;
+}
+
+CombatBotRoles CombatBotBaseAI::GetGroupMemberRole(Player* pMember) const
+{
+    if (pMember == me)
+        return m_role;
+
+    // A bot of this subsystem was made with a role, and with the talent that `.partybot add' was given when one
+    // was given, which says what it does in the group outright. The reading of the signature spells is what the
+    // other members are asked with, and it is the same reading that the role of this bot is made from.
+    if (CombatBotBaseAI* pBotAI = dynamic_cast<CombatBotBaseAI*>(pMember->AI()))
+        return pBotAI->GetRole();
+
+    return ReadPlayerRole(pMember);
+}
+
+bool CombatBotBaseAI::PaladinGroupMateIsBuffing() const
+{
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return false;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember ||
+            pMember == me ||
+            pMember->GetClass() != CLASS_PALADIN ||
+            !pMember->IsAlive() ||
+            !me->IsWithinLOSInMap(pMember))
+            continue;
+
+        // A paladin that is mounted is travelling, one that sits is eating, and one that fights is fighting;
+        // none of the three is blessing the group. Out of combat and on foot the global cooldown says that the
+        // paladin has just let a spell off, and the blessings are the only spells that a paladin stands about a
+        // group to cast; it puts them on one member after another, which is that cooldown over and over.
+        if (pMember->IsMounted() ||
+            pMember->IsInCombat() ||
+            pMember->GetStandState() != UNIT_STAND_STATE_STAND)
+            continue;
+
+        if (pMember->HasGCD(nullptr))
+            return true;
+    }
+
+    return false;
+}
+
+// The two ranks of a blessing are one buff of the world, so a member that carries either of them is served by
+// it: a bot that stands in a dungeon and finds the ordinary blessing standing on a member does not spend its
+// global cooldown putting the greater one over it, but waits for the buff to run out. That is where the greater
+// rank comes up without two paladins of one group taking the same member back from each other.
+// A dungeon or a raid is the ground that asks for the greater rank, which is the question that the charge of a
+// tank is refused by as well (`Map::IsDungeon()`, a battleground being open ground to it).
+SpellEntry const* CombatBotBaseAI::SelectPaladinBlessingOfKind(Player* pMember, SpellEntry const* pOrdinary,
+    SpellEntry const* pGreater, bool inInstance) const
+{
+    if ((pOrdinary && !IsValidBuffTarget(pMember, pOrdinary)) ||
+        (pGreater && !IsValidBuffTarget(pMember, pGreater)))
+        return nullptr;
+
+    if (inInstance && pGreater)
+        return pGreater;
+
+    return pOrdinary;
+}
+
+SpellEntry const* CombatBotBaseAI::SelectPaladinBlessingSpell(Player* pMember) const
+{
+    Map* pMap = me->GetMap();
+    bool const inInstance = pMap && pMap->IsDungeon();
+
+    // What the member is still missing of each kind, in the rank that the ground it stands on asks for: nullptr
+    // for a kind that the member carries already in either of its ranks, or that the bot does not know at all.
+    SpellEntry const* pKings = SelectPaladinBlessingOfKind(pMember, m_spells.paladin.pBlessingOfKings,
+        m_spells.paladin.pGreaterBlessingOfKings, inInstance);
+    SpellEntry const* pWisdom = SelectPaladinBlessingOfKind(pMember, m_spells.paladin.pBlessingOfWisdom,
+        m_spells.paladin.pGreaterBlessingOfWisdom, inInstance);
+    SpellEntry const* pMight = SelectPaladinBlessingOfKind(pMember, m_spells.paladin.pBlessingOfMight,
+        m_spells.paladin.pGreaterBlessingOfMight, inInstance);
+
+    // Kings raises the attributes of every member of the group, whatever that member does in it, and going
+    // through the members in the order the group lists them is what keeps two paladins of one group from
+    // blessing the same member with the same thing.
+    if (pKings)
+        return pKings;
+
+    switch (GetGroupMemberRole(pMember))
+    {
+        case ROLE_HEALER:
+        case ROLE_RANGE_DPS:
+            // Wisdom is the mana that a healer and a caster spend on the group. A hunter is ranged damage with a
+            // mana bar of its own, so it belongs here rather than with the melee that a Might is for.
+            if (pWisdom)
+                return pWisdom;
+            break;
+        case ROLE_TANK:
+        case ROLE_MELEE_DPS:
+        default:
+            if (pMight)
+                return pMight;
+
+            // A retribution paladin and a feral druid swing with a mana bar under them, so the Might that
+            // another paladin of the group has already put on them leaves the Wisdom for them to take. A warrior
+            // and a rogue have no mana, so nothing is left for them.
+            if ((pMember->GetClass() == CLASS_PALADIN || pMember->GetClass() == CLASS_DRUID) &&
+                pWisdom)
+                return pWisdom;
+            break;
+    }
+
+    return nullptr;
+}
+
+Player* CombatBotBaseAI::SelectPaladinBlessingTarget(SpellEntry const*& pSelectedSpellEntry) const
+{
+    pSelectedSpellEntry = nullptr;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember ||
+            pMember->IsGameMaster() ||
+            !pMember->IsAlive() ||
+            !me->IsValidHelpfulTarget(pMember) ||
+            !me->IsWithinLOSInMap(pMember) ||
+            !me->IsWithinDist(pMember, 30.0f))
+            continue;
+
+        // The group is served in the order the group lists its members, so a blessing that the gate of the spell
+        // in UpdatePaladinGroupBlessings() refused for one member is asked for that member again on the next
+        // update rather than a member further down the list being served first.
+        if (SpellEntry const* pBlessingSpell = SelectPaladinBlessingSpell(pMember))
+        {
+            pSelectedSpellEntry = pBlessingSpell;
+            return pMember;
+        }
+    }
+
+    return nullptr;
+}
+
+bool CombatBotBaseAI::UpdatePaladinGroupBlessings()
+{
+    uint64 const now = uint64(time(nullptr));
+    bool const inRound = now < m_paladinBuffRoundEndsAt;
+
+    // A round is one sitting of the group: the bot goes on with the members that are still missing a blessing,
+    // and it does not look for another paladin about the group in the middle of one. Between the rounds it asks
+    // whether a paladin of the group is blessing it now, and such a paladin is left the time that it needs to
+    // finish, so that the two of them do not take the same member next.
+    if (!inRound)
+    {
+        if (now < m_paladinBuffHoldUntil)
+            return false;
+
+        if (PaladinGroupMateIsBuffing())
+        {
+            m_paladinBuffHoldUntil = now + PB_PALADIN_BUFF_CONFLICT_WAIT_S;
+            return false;
+        }
+    }
+
+    SpellEntry const* pBlessingSpell = nullptr;
+    Player* pTarget = SelectPaladinBlessingTarget(pBlessingSpell);
+    if (!pTarget)
+    {
+        // The group is served, which ends the round: the next blessing that a member of it asks for opens a new
+        // one, and the other paladins of the group are looked at again then.
+        m_paladinBuffRoundEndsAt = 0;
+        return false;
+    }
+
+    if (!CanTryToCastSpell(pTarget, pBlessingSpell))
+        return false;
+
+    if (DoCastSpell(pTarget, pBlessingSpell) != SPELL_CAST_OK)
+        return false;
+
+    if (!inRound)
+        m_paladinBuffRoundEndsAt = now + PB_PALADIN_BUFF_ROUND_S;
+
+    m_isBuffing = true;
+    return true;
 }
 
 Player* CombatBotBaseAI::SelectDispelTarget(SpellEntry const* pSpellEntry) const

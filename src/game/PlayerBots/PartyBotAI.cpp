@@ -3486,25 +3486,18 @@ void PartyBotAI::UpdateOutOfCombatAI_Paladin()
             return;
     }
 
-    if (m_spells.paladin.pBlessingBuff)
+    // The blessings go one member of the group at a time, which is the reason the bot puts its own attack target
+    // down while it stands about the group to put them up.
+    if (UpdatePaladinGroupBlessings())
     {
-        if (Player* pTarget = SelectBuffTarget(m_spells.paladin.pBlessingBuff))
-        {
-            if (CanTryToCastSpell(pTarget, m_spells.paladin.pBlessingBuff))
-            {
-                if (DoCastSpell(pTarget, m_spells.paladin.pBlessingBuff) == SPELL_CAST_OK)
-                {
-                    m_isBuffing = true;
-                    me->ClearTarget();
-                    return;
-                }
-            }
-        }
+        me->ClearTarget();
+        return;
     }
 
+    // The blessings are all that a paladin buffs the group with out of combat, so the global cooldown of the last
+    // of them is what says that the bot is still at it.
     if (m_isBuffing &&
-       (!m_spells.paladin.pBlessingBuff ||
-        !me->HasGCD(m_spells.paladin.pBlessingBuff)))
+        !me->HasGCD(nullptr))
     {
         m_isBuffing = false;
     }

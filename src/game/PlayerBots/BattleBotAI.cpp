@@ -1230,24 +1230,13 @@ void BattleBotAI::UpdateOutOfCombatAI_Paladin()
             return;
     }
 
-    if (m_spells.paladin.pBlessingBuff)
-    {
-        if (Player* pTarget = SelectBuffTarget(m_spells.paladin.pBlessingBuff))
-        {
-            if (CanTryToCastSpell(pTarget, m_spells.paladin.pBlessingBuff))
-            {
-                if (DoCastSpell(pTarget, m_spells.paladin.pBlessingBuff) == SPELL_CAST_OK)
-                {
-                    m_isBuffing = true;
-                    return;
-                }
-            }
-        }
-    }
+    // A battleground is open ground, so a battle paladin serves its group with the ordinary blessings; the
+    // round of them and the wait for another paladin of the group are the rules of UpdatePaladinGroupBlessings.
+    if (UpdatePaladinGroupBlessings())
+        return;
 
     if (m_isBuffing &&
-       (!m_spells.paladin.pBlessingBuff ||
-        !me->HasGCD(m_spells.paladin.pBlessingBuff)))
+        !me->HasGCD(nullptr))
     {
         m_isBuffing = false;
     }

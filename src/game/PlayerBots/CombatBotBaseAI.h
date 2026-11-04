@@ -146,6 +146,26 @@ public:
     Player* SelectBuffTarget(SpellEntry const* pSingleSpellEntry, SpellEntry const* pGroupSpellEntry, SpellEntry const*& pSelectedSpellEntry) const;
     Player* SelectDispelTarget(SpellEntry const* pSpellEntry) const;
     bool IsValidBuffTarget(Unit const* pTarget, SpellEntry const* pSpellEntry) const;
+    // The group blessings of a paladin, shared by the party bot and the battle bot: what one member of the
+    // group is waiting for, which member to serve next, and the wait that keeps two paladins of one group from
+    // buffing it at the same time.
+    bool UpdatePaladinGroupBlessings();
+    // The blessing that this member of the group is waiting for and that this bot may give it, by what that
+    // member does in the group; nullptr when the member has everything that the bot has for it
+    SpellEntry const* SelectPaladinBlessingSpell(Player* pMember) const;
+    // The blessing of one kind that a member of the group is waiting for, in the rank that the ground it stands
+    // on asks for; nullptr when the bot knows neither rank or the member carries either of them
+    SpellEntry const* SelectPaladinBlessingOfKind(Player* pMember, SpellEntry const* pOrdinary,
+        SpellEntry const* pGreater, bool inInstance) const;
+    // The first member of the group that is waiting for a blessing, with the spell of it in pSelectedSpellEntry
+    Player* SelectPaladinBlessingTarget(SpellEntry const*& pSelectedSpellEntry) const;
+    // Whether another paladin of the group is blessing it now, which is the reason to wait
+    bool PaladinGroupMateIsBuffing() const;
+    // What a member of the group does in it, which is the role of a bot of this subsystem and the reading of
+    // ReadPlayerRole() for anybody else
+    CombatBotRoles GetGroupMemberRole(Player* pMember) const;
+    // The role that the spells of a player say, which is what the role of a bot is decided from as well
+    CombatBotRoles ReadPlayerRole(Player* pPlayer) const;
     bool IsValidHealTarget(Unit const* pTarget, float healthPercent = 100.0f) const;
     bool IsValidHostileTarget(Unit const* pTarget) const;
     bool IsValidDispelTarget(Unit const* pTarget, SpellEntry const* pSpellEntry) const;
@@ -347,7 +367,12 @@ public:
         {
             SpellEntry const* pAura;
             SpellEntry const* pSeal;
-            SpellEntry const* pBlessingBuff;
+            SpellEntry const* pBlessingOfKings;
+            SpellEntry const* pBlessingOfWisdom;
+            SpellEntry const* pBlessingOfMight;
+            SpellEntry const* pGreaterBlessingOfKings;
+            SpellEntry const* pGreaterBlessingOfWisdom;
+            SpellEntry const* pGreaterBlessingOfMight;
             SpellEntry const* pBlessingOfProtection;
             SpellEntry const* pBlessingOfFreedom;
             SpellEntry const* pBlessingOfSacrifice;
@@ -617,6 +642,10 @@ public:
 
     bool m_initialized = false;
     bool m_isBuffing = false;
+    // When the round of group blessings of this bot ends, and when the wait for another paladin of the group
+    // that is buffing ends; both are wall-clock seconds, as the other buffing waits of this subsystem are
+    uint64 m_paladinBuffRoundEndsAt = 0;
+    uint64 m_paladinBuffHoldUntil = 0;
     bool m_preventCasting = false;
     bool m_receivedBgInvite = false;
     uint8 m_visualHonorRank = 0;

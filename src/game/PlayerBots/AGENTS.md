@@ -431,9 +431,9 @@ document and the code in step - it is what the maintainer reads to tune the valu
     depend on one gear slot being filled, and the role it falls back to was itself given by the shield, by the talent
     build, or by `.partybot add <talent>`. The role of a bot that comes back from the database comes from the same
     shield rule: neither the role nor the asked talent is stored with a saved bot, and a role set with
-    `.bot setrole` is kept until the next load. `AutoAssignRole()` reads the shield that the bot wears, and for a
-    warrior without a shield the build of `playerbot_talent_build` whose steps its learned talents complete the most
-    (`GetLearnedTalentBuildPage()`).
+    `.bot setrole` is kept until the next load. `ReadPlayerRole()`, which `AutoAssignRole()` now only calls, reads
+    the shield that the bot wears, and for a warrior without a shield the build of `playerbot_talent_build` whose
+    steps its learned talents complete the most (`GetLearnedTalentBuildPage()`).
     One signature spell cannot say the talent of a warrior: the id that was asked for there is Shield Slam, the
     sixteenth of the seventeen steps of the protection build, which a bot knows only when it is deep in that
     build, so every shield tank that was not deep in its build came back as a damage dealer without a Defensive
@@ -516,6 +516,40 @@ document and the code in step - it is what the maintainer reads to tune the valu
     have bought. In the Berserker Stance `Pummel` is there for nothing; a bot that stands in the Battle Stance leaves
     it for the interrupt only where the talent that keeps the rage through a change was taken and the rage is inside
     the window above.
+
+20. A paladin stands out of combat and blesses its group one member at a time, and it serves a member with what
+    that member does in the group: `Blessing of Kings` for every member of the group that does not carry it,
+    `Blessing of Wisdom` for the healers and the casters (a hunter goes with them, for the mana that its shots
+    cost), and `Blessing of Might` for the melee and the tank. A retribution paladin or a feral druid that has its
+    Might from another paladin is given the Wisdom instead; a warrior and a rogue have no mana bar, so nothing is
+    left for them. `Blessing of Light` and `Blessing of Sanctuary` are not read from the spellbook at all now, and
+    the one blessing that used to be picked at random for a paladin bot to put on whoever stood without one is
+    gone with `pBlessingBuff`.
+    What a member does in the group is asked of `GetGroupMemberRole()`: the role of a bot of this subsystem comes
+    from its AI, and anybody else is read by `ReadPlayerRole()` - the reading of the signature spells that
+    `AutoAssignRole()` makes a bot's role from, which one function owns now. A player that is not a bot is served
+    as the talent that its spellbook says rather than as its class; that is the same question, and one function
+    answers it. In a dungeon or a raid the bot asks for the greater blessing of a kind when it knows it, and the
+    ordinary one outside it - `Map::IsDungeon()` again, as rule 17 asks it, so a battleground is open ground and a
+    battle paladin serves its group with the ordinary blessings. The two ranks are kept apart while the spellbook
+    is read, `Greater Blessing of ...` before the ordinary name that every one of those contains: the ranks of the
+    two families are numbered separately, and the higher rank of one is not the higher buff of the other.
+    `UpdatePaladinGroupBlessings()` is the one owner of all of this for the party paladin and the battle paladin;
+    `SelectPaladinBlessingTarget()` walks the group in the order the group lists its members and
+    `SelectPaladinBlessingSpell()` answers what one member is waiting for. A member that carries a blessing in
+    either of its ranks, or a stronger spell of the same kind, is passed over: `SelectPaladinBlessingOfKind()`
+    asks `IsValidBuffTarget()` about both of the ranks of a kind, so the greater rank of a dungeon is not put over
+    an ordinary blessing that is standing on the member already - the bot waits for that buff to run out, which is
+    where its own greater rank comes up. That is what keeps two paladins of one group from putting the same
+    blessing on one member twice, and what the wait below is for is the member that both of them would take next.
+    A paladin of the group that stands out of combat, on foot, with its global cooldown running is blessing the
+    group: the blessings are the only spells that a paladin stands about a group to cast, and it puts them on one
+    member after another, which is that cooldown over and over. Such a paladin is left
+    `PB_PALADIN_BUFF_CONFLICT_WAIT_S` of twenty seconds to finish before the bot begins its own. The blessings of
+    the bot then go in a round, which is not broken off in the middle: it closes when no member of the group is
+    missing a blessing, or at `PB_PALADIN_BUFF_ROUND_S`, and another paladin about the group is looked for only
+    between the rounds. That is the answer to a paladin that buffs a group with its own hands and to a second
+    paladin bot at the same time; the auras above are what stops either of them blessing a member twice.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps
