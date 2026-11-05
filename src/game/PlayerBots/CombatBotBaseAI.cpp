@@ -237,12 +237,6 @@ void CombatBotBaseAI::PopulateSpellData()
     // Mage Frost Armor (to replace ice armor at low level)
     SpellEntry const* pFrostArmor = nullptr;
 
-    bool hasDeadlyPoison = false;
-    bool hasInstantPoison = false;
-    bool hasCripplingPoison = false;
-    bool hasWoundPoison = false;
-    bool HasMindNumbingPoison = false;
-
     // A passive talent gives no spell of its own and is only to be seen in the spell map of the character, and
     // the rules that read one want its best rank rather than the first rank the loop happens to meet: the rank
     // of a talent is what a bot has spent points on.
@@ -1429,26 +1423,6 @@ void CombatBotBaseAI::PopulateSpellData()
                     if (IsHigherRankSpell(m_spells.rogue.pSprint))
                         m_spells.rogue.pSprint = pSpellEntry;
                 }
-                else if (pSpellEntry->SpellName[0].find("Deadly Poison") != std::string::npos)
-                {
-                    hasDeadlyPoison = true;
-                }
-                else if (pSpellEntry->SpellName[0].find("Instant Poison") != std::string::npos)
-                {
-                    hasInstantPoison = true;
-                }
-                else if (pSpellEntry->SpellName[0].find("Crippling Poison") != std::string::npos)
-                {
-                    hasCripplingPoison = true;
-                }
-                else if (pSpellEntry->SpellName[0].find("Wound Poison") != std::string::npos)
-                {
-                    hasWoundPoison = true;
-                }
-                else if (pSpellEntry->SpellName[0].find("Mind-numbing Poison") != std::string::npos)
-                {
-                    HasMindNumbingPoison = true;
-                }
                 break;
             }
             case CLASS_DRUID:
@@ -1847,7 +1821,12 @@ void CombatBotBaseAI::PopulateSpellData()
         }
         case CLASS_ROGUE:
         {
-            // Rogues can only craft an item that applies the poison, they don't know the actual poison enchant.
+            // A rogue of this world buys its poisons as items at a vendor and puts them on with the Poisons skill
+            // that the quest of its class teaches; a bot carries neither the items nor the skill. What both of them
+            // are is the enchantment that a poison of the level of the rogue puts on a weapon, so the bot asks that
+            // spell of its weapon directly, as a shaman asks the buff of its weapon: both families are read here at
+            // the highest rank whose level the bot has reached, and `ApplyWeaponPoisons()` decides out of the two
+            // which one the bot wears. No other poison family is read: no rule of a bot wants their effect.
             auto GetHighestRankOfPoisonByName = [](std::string name, uint32 level)
             {
                 SpellEntry const* pHighestRank = nullptr;
@@ -1866,24 +1845,8 @@ void CombatBotBaseAI::PopulateSpellData()
                 return pHighestRank;
             };
 
-            SpellEntry const* pPoisonSpell = nullptr;
-            std::vector<SpellEntry const*> vPoisons;
-            if (hasDeadlyPoison && (pPoisonSpell = GetHighestRankOfPoisonByName("Deadly Poison", me->GetLevel())))
-                vPoisons.push_back(pPoisonSpell);
-            if (hasInstantPoison && (pPoisonSpell = GetHighestRankOfPoisonByName("Instant Poison", me->GetLevel())))
-                vPoisons.push_back(pPoisonSpell);
-            if (hasCripplingPoison && (pPoisonSpell = GetHighestRankOfPoisonByName("Crippling Poison", me->GetLevel())))
-                vPoisons.push_back(pPoisonSpell);
-            if (hasWoundPoison && (pPoisonSpell = GetHighestRankOfPoisonByName("Wound Poison", me->GetLevel())))
-                vPoisons.push_back(pPoisonSpell);
-            if (HasMindNumbingPoison && (pPoisonSpell = GetHighestRankOfPoisonByName("Mind-numbing Poison", me->GetLevel())))
-                vPoisons.push_back(pPoisonSpell);
-
-            if (!vPoisons.empty())
-            {
-                m_spells.rogue.pMainHandPoison = SelectRandomContainerElement(vPoisons);
-                m_spells.rogue.pOffHandPoison = SelectRandomContainerElement(vPoisons);
-            }
+            m_spells.rogue.pInstantPoison = GetHighestRankOfPoisonByName("Instant Poison", me->GetLevel());
+            m_spells.rogue.pCripplingPoison = GetHighestRankOfPoisonByName("Crippling Poison", me->GetLevel());
 
             break;
         }
@@ -4193,6 +4156,26 @@ SpellCastResult CombatBotBaseAI::CastWeaponBuff(SpellEntry const* pSpellEntry, E
     SpellCastTargets targets;
     targets.setItemTarget(pWeapon);
     return spell->prepare(std::move(targets), nullptr);
+}
+
+// The poisons of a rogue, put on out of combat as a player puts them on between two fights. One weapon is done per
+// call, the main hand first, because the two weapons are two casts and the main hand is the stronger of them; a
+// weapon that the bot does not wear, or that is already poisoned, is passed over for the other one. The rank of
+// both families comes from `PopulateSpellData()` at the level of the bot, and which of the two families is worn is
+// one rule rather than a choice of the bot: inside a battleground the poison that holds its target in place is
+// worth more than the damage that it does not do, and outside one the damage is.
+bool CombatBotBaseAI::ApplyWeaponPoisons()
+{
+    SpellEntry const* pPoison = me->InBattleGround() ?
+        m_spells.rogue.pCripplingPoison : m_spells.rogue.pInstantPoison;
+
+    if (!pPoison || !CanTryToCastSpell(me, pPoison))
+        return false;
+
+    if (CastWeaponBuff(pPoison, EQUIPMENT_SLOT_MAINHAND) == SPELL_CAST_OK)
+        return true;
+
+    return CastWeaponBuff(pPoison, EQUIPMENT_SLOT_OFFHAND) == SPELL_CAST_OK;
 }
 
 bool CombatBotBaseAI::UseTrinketEffects(bool onlyToBreakCC)

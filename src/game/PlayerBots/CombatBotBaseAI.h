@@ -229,6 +229,10 @@ public:
     virtual float GetChaseDistance() const;
     bool SummonShamanTotems();
     SpellCastResult CastWeaponBuff(SpellEntry const* pSpellEntry, EquipmentSlots slot);
+    // The poisons that a rogue bot puts on its weapons out of combat, and which of the two families of this world
+    // it puts on them: the slowing one inside a battleground, where holding a target is worth more than the damage,
+    // and the damaging one outside it. Both ranks are read for the level of the bot by `PopulateSpellData()`.
+    bool ApplyWeaponPoisons();
     bool UseTrinketEffects(bool onlyToBreakCC = false);
     bool UseItemEffect(Item* pItem, bool onlyToBreakCC = false);
     void BreakCrowdControlEffects();
@@ -603,8 +607,8 @@ public:
             SpellEntry const* pRiposte;
             SpellEntry const* pKick;
             SpellEntry const* pSprint;
-            SpellEntry const* pMainHandPoison;
-            SpellEntry const* pOffHandPoison;
+            SpellEntry const* pInstantPoison;
+            SpellEntry const* pCripplingPoison;
         } rogue;
         struct
         {

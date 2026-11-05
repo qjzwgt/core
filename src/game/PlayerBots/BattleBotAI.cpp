@@ -2646,19 +2646,8 @@ void BattleBotAI::UpdateInCombatAI_Warrior()
 
 void BattleBotAI::UpdateOutOfCombatAI_Rogue()
 {
-    if (m_spells.rogue.pMainHandPoison &&
-        CanTryToCastSpell(me, m_spells.rogue.pMainHandPoison))
-    {
-        if (CastWeaponBuff(m_spells.rogue.pMainHandPoison, EQUIPMENT_SLOT_MAINHAND) == SPELL_CAST_OK)
-            return;
-    }
-
-    if (m_spells.rogue.pOffHandPoison &&
-        CanTryToCastSpell(me, m_spells.rogue.pOffHandPoison))
-    {
-        if (CastWeaponBuff(m_spells.rogue.pOffHandPoison, EQUIPMENT_SLOT_OFFHAND) == SPELL_CAST_OK)
-            return;
-    }
+    if (ApplyWeaponPoisons())
+        return;
 
     if (m_spells.rogue.pStealth &&
         CanTryToCastSpell(me, m_spells.rogue.pStealth) &&

@@ -275,6 +275,14 @@ document and the code in step - it is what the maintainer reads to tune the valu
    obtainable, when the bot can not use it at its class, race, level or proficiency, when its on-use spell is not a
    learn spell, or when the taught spell has no `SkillLineAbility` row. A bot has no profession, so profession
    recipes stay out, while class skill books enter at the level of their item.
+   A rogue bot puts its poisons on out of combat, as a player puts them on between two fights, and it asks for the
+   enchantment that a poison puts on a weapon as a spell of its own (`CombatBotBaseAI::ApplyWeaponPoisons()`, next
+   to `CastWeaponBuff()`): a bot carries neither the poison items of a vendor nor the Poisons skill of the quest of
+   its class, and a player reaches that same enchantment through either of them. Which of the two families it wears
+   is one rule rather than a choice of the bot - `Crippling Poison` inside a battleground, where holding a target
+   out of reach of the pack is worth more than the damage, and `Instant Poison` outside one - and one weapon is
+   done per update, the main hand first. The spellbook is not asked about a poison and the other three families are
+   not read at all: no rule of a bot wants their effect.
 
 14. A party bot that has no target of its own first assists the current target of another group member within fifty
     yards, before it considers the units that are only attacking that member. Having a target is enough here because
@@ -606,6 +614,10 @@ created new), defense rating, weapon skills.
 - `Player::CanDualWield()` reads `m_canDualWield`, which is false after construction and is never set anywhere
   else, and `SKILL_DUAL_WIELD` has no grant path. Spell 674 is taught directly for that reason; a bot loaded from
   the database would otherwise lose the second weapon.
+- The rank of the poison that a rogue bot wears is the highest rank of that family whose `SpellLevel` in
+  `Spell.dbc` the level of the bot has reached (`GetHighestRankOfPoisonByName()`, read by `PopulateSpellData()`),
+  because that column is the only level this world gives for the enchantment of a poison item: the vendor that sells
+  such an item to a rogue of that level is not asked, and neither is the Poisons skill of the quest of the class.
 
 ## Commands of this subsystem
 - The handlers live in `PlayerBotMgr.cpp`; the sub command tables of `.partybot` and `.bot` are in
