@@ -161,6 +161,25 @@ public:
     Player* SelectPaladinBlessingTarget(SpellEntry const*& pSelectedSpellEntry) const;
     // Whether another paladin of the group is blessing it now, which is the reason to wait
     bool PaladinGroupMateIsBuffing() const;
+    // The emergency blessings of a paladin in combat, shared by the party bot and the battle bot: which member
+    // is close enough to death to be blessed, which member stands held in place, and which one a Blessing of
+    // Freedom is for once its wait is over.
+    // The tank of the group that this bot may help, this bot itself when it plays the tank; nullptr when the
+    // group has no tank that the bot reaches
+    Player* SelectPaladinGroupTank() const;
+    // The tank of the group once it is close enough to death for the Lay on Hands of the paladin; nullptr when
+    // the group has no tank or none of them is close enough
+    Player* SelectPaladinLayOnHandsTarget() const;
+    // The member of the group that a Blessing of Protection is for: the caster that can not stand a physical
+    // hit, that no immunity over every school already covers, and that is the closest to death; nullptr when
+    // none of them is close enough
+    Player* SelectPaladinProtectionTarget() const;
+    // The member that a Blessing of Freedom is for once its wait is over: the tank of the group when the group
+    // has one and it stands held in place, this bot when the group has no tank and it is held itself; nullptr
+    // while nobody is to be freed, which is also the case while the group has a tank that is not held
+    Player* SelectPaladinFreedomTarget();
+    // Whether a member stands where a root or a slow holds it, which is what a Blessing of Freedom answers
+    bool IsMemberHeldInPlace(Player const* pMember) const;
     // What a member of the group does in it, which is the role of a bot of this subsystem and the reading of
     // ReadPlayerRole() for anybody else
     CombatBotRoles GetGroupMemberRole(Player* pMember) const;
@@ -375,7 +394,6 @@ public:
             SpellEntry const* pGreaterBlessingOfMight;
             SpellEntry const* pBlessingOfProtection;
             SpellEntry const* pBlessingOfFreedom;
-            SpellEntry const* pBlessingOfSacrifice;
             SpellEntry const* pHammerOfJustice;
             SpellEntry const* pJudgement;
             SpellEntry const* pExorcism;
@@ -646,6 +664,9 @@ public:
     // that is buffing ends; both are wall-clock seconds, as the other buffing waits of this subsystem are
     uint64 m_paladinBuffRoundEndsAt = 0;
     uint64 m_paladinBuffHoldUntil = 0;
+    // The second that a member of the group was first seen standing held in place, which is where the wait of a
+    // Blessing of Freedom starts; zero while nobody is held
+    uint64 m_paladinFreedomHeldSince = 0;
     bool m_preventCasting = false;
     bool m_receivedBgInvite = false;
     uint8 m_visualHonorRank = 0;

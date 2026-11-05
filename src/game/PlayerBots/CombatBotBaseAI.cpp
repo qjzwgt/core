@@ -66,6 +66,16 @@ enum CombatBotSpells
 // next member that the bot blesses opens a round and the conflict is looked at again.
 #define PB_PALADIN_BUFF_ROUND_S 30
 
+// The health that the emergency blessings of a paladin in combat are asked at: the Blessing of Protection for
+// the caster of the group that is closest to death and can not stand a physical hit itself, and the Lay on
+// Hands for the tank of the group at its own health. Both are values for the maintainer to tune.
+#define PB_PALADIN_PROTECTION_HEALTH_PERCENT 25
+#define PB_PALADIN_LAY_ON_HANDS_HEALTH_PERCENT 15
+// How long a Blessing of Freedom waits after a member of the group is first seen standing held in place. The
+// Cleanse of the paladin answers a magic effect before the blessing does, and a hold that breaks on its own is
+// worth neither the mana nor the global cooldown that the blessing would spend.
+#define PB_PALADIN_FREEDOM_WAIT_S 3
+
 // The role that the spells of a player say, which is what the role of a bot is decided from and what a
 // blessing is asked for another member of the group by: the signature spells that only one talent of a class
 // teaches, and for a warrior the shield that it wears and the build its talent points were spent in. Nothing
@@ -166,8 +176,9 @@ void CombatBotBaseAI::PopulateSpellData()
     SpellEntry const* pSealOfFury = nullptr;
 
     // Paladin Blessings: the three that a paladin brings to a group, in the ordinary rank of the open world and
-    // in the greater rank that a group going into a dungeon or a raid is served with. The utility blessings of a
-    // paladin are read into m_spells.paladin by the loop below, as they were.
+    // in the greater rank that a group going into a dungeon or a raid is served with. The Protection and the
+    // Freedom that a paladin answers an emergency with are read into m_spells.paladin by the loop below; a
+    // Sacrifice is not read at all, because no rule of a paladin asks for it.
     SpellEntry const* pGreaterBlessingOfKings = nullptr;
     SpellEntry const* pGreaterBlessingOfWisdom = nullptr;
     SpellEntry const* pGreaterBlessingOfMight = nullptr;
@@ -311,11 +322,6 @@ void CombatBotBaseAI::PopulateSpellData()
                 {
                     if (IsHigherRankSpell(m_spells.paladin.pHammerOfJustice))
                         m_spells.paladin.pHammerOfJustice = pSpellEntry;
-                }
-                else if (pSpellEntry->SpellName[0].find("Blessing of Sacrifice") != std::string::npos)
-                {
-                    if (IsHigherRankSpell(m_spells.paladin.pBlessingOfSacrifice))
-                        m_spells.paladin.pBlessingOfSacrifice = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Blessing of Freedom") != std::string::npos)
                 {
@@ -2591,6 +2597,124 @@ bool CombatBotBaseAI::UpdatePaladinGroupBlessings()
 
     m_isBuffing = true;
     return true;
+}
+
+Player* CombatBotBaseAI::SelectPaladinGroupTank() const
+{
+    // This bot first: a paladin that plays the shield tank is the member that the mobs come down on, and the
+    // party leans on it.
+    if (m_role == ROLE_TANK && me->IsAlive())
+        return me;
+
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        if (!pMember ||
+            pMember == me ||
+            pMember->IsGameMaster() ||
+            !pMember->IsAlive() ||
+            !me->IsValidHelpfulTarget(pMember) ||
+            !me->IsWithinLOSInMap(pMember) ||
+            !me->IsWithinDist(pMember, 30.0f))
+            continue;
+
+        if (GetGroupMemberRole(pMember) == ROLE_TANK)
+            return pMember;
+    }
+
+    return nullptr;
+}
+
+Player* CombatBotBaseAI::SelectPaladinLayOnHandsTarget() const
+{
+    Player* pTank = SelectPaladinGroupTank();
+    if (!pTank)
+        return nullptr;
+
+    // The spell is for the member that holds the mobs, and it is spent where the heals of the rotation of the
+    // paladin would not have been enough for it.
+    if (pTank->GetHealthPercent() >= float(PB_PALADIN_LAY_ON_HANDS_HEALTH_PERCENT))
+        return nullptr;
+
+    return pTank;
+}
+
+Player* CombatBotBaseAI::SelectPaladinProtectionTarget() const
+{
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    Player* pWeakest = nullptr;
+
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        Player* pMember = itr->getSource();
+        // A warrior, a paladin, a rogue, a hunter, a shaman and a druid meet a physical hit with their armour,
+        // their shield or their pet, so the blessing is for the caster that has none of those. A member that
+        // stands under an immunity over every school - the Ice Block that the frost talent of a mage grants, the
+        // Divine Shield of another paladin - is out of reach of the hit that the blessing would answer, and a
+        // member that is not close to death yet is not the one the emergency is about.
+        if (!pMember ||
+            pMember->IsGameMaster() ||
+            !pMember->IsAlive() ||
+            !me->IsValidHelpfulTarget(pMember) ||
+            !me->IsWithinLOSInMap(pMember) ||
+            !me->IsWithinDist(pMember, 30.0f) ||
+            IsPhysicalDamageClass(pMember->GetClass()) ||
+            pMember->GetHealthPercent() >= float(PB_PALADIN_PROTECTION_HEALTH_PERCENT) ||
+            pMember->IsTotalImmune())
+            continue;
+
+        // Of the casters that are in danger the one closest to death is blessed first, which is the way the
+        // paladin of a party picks its emergency target.
+        if (!pWeakest || pMember->GetHealthPercent() < pWeakest->GetHealthPercent())
+            pWeakest = pMember;
+    }
+
+    return pWeakest;
+}
+
+bool CombatBotBaseAI::IsMemberHeldInPlace(Player const* pMember) const
+{
+    return pMember->HasUnitState(UNIT_STATE_ROOT) || pMember->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED);
+}
+
+Player* CombatBotBaseAI::SelectPaladinFreedomTarget()
+{
+    uint64 const now = uint64(time(nullptr));
+
+    // The freedom of a group is asked for its tank and for nobody else, because the party is lost when the
+    // member that holds the mobs can not reach them: a paladin that is slowed while its tank stands free keeps
+    // the blessing for the tank. A group without a tank has nobody to hold the mobs, and the paladin frees
+    // itself.
+    Player* pMember = SelectPaladinGroupTank();
+    if (!pMember)
+        pMember = me;
+
+    if (!IsMemberHeldInPlace(pMember))
+    {
+        m_paladinFreedomHeldSince = 0;
+        return nullptr;
+    }
+
+    // The three seconds are for the answers that come before the blessing: the Cleanse of this bot takes a magic
+    // hold off a member, the mobs of the party may leave a hold that only lasts a moment, and a blessing that
+    // arrives too early is a global cooldown spent on nothing.
+    if (!m_paladinFreedomHeldSince)
+    {
+        m_paladinFreedomHeldSince = now;
+        return nullptr;
+    }
+
+    if (now < m_paladinFreedomHeldSince + PB_PALADIN_FREEDOM_WAIT_S)
+        return nullptr;
+
+    return pMember;
 }
 
 Player* CombatBotBaseAI::SelectDispelTarget(SpellEntry const* pSpellEntry) const

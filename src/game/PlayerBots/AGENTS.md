@@ -550,6 +550,27 @@ document and the code in step - it is what the maintainer reads to tune the valu
     missing a blessing, or at `PB_PALADIN_BUFF_ROUND_S`, and another paladin about the group is looked for only
     between the rounds. That is the answer to a paladin that buffs a group with its own hands and to a second
     paladin bot at the same time; the auras above are what stops either of them blessing a member twice.
+    In combat the blessings answer what is happening to the group. `SelectPaladinProtectionTarget()` gives
+    `Blessing of Protection` to the caster of the group that can not stand a physical hit with armour, a shield
+    or a pet of its own and that is the closest to death, once it is under `PB_PALADIN_PROTECTION_HEALTH_PERCENT`;
+    a member that stands under an immunity over every school is passed over, which is the Ice Block that the
+    frost talent of a mage grants and the Divine Shield of another paladin. `Unit::IsTotalImmune()` is the
+    reading of that state, the same one that keeps a bot from attacking or healing an immune unit, so no id of a
+    rank of either spell is written in the source and no spell of the member is read: a spell that is only
+    learned, or only off its cooldown, protects nobody and answers nothing. `Lay on Hands` is kept for the tank
+    of the group at `PB_PALADIN_LAY_ON_HANDS_HEALTH_PERCENT`, which is this bot itself when it plays the tank,
+    and `SelectPaladinGroupTank()` answers who that member is. `Blessing of Sacrifice` is neither used nor read
+    from
+    the spellbook: the life that it moves onto a member is the life that the paladin then lacks for the healing
+    of the party. `Blessing of Freedom` answers a member that stands held in place, by a root or by a slow, and
+    it goes to the tank of the group while the group has one and to this bot when it has none - a paladin that
+    is slowed while its tank stands held keeps the blessing for the tank. It stands below `Cleanse`: the
+    battleground routine asks for the freedom after its Cleanse, and a party bot only reaches the routine of its
+    class after `CheckForDispelTargets()`. It also waits `PB_PALADIN_FREEDOM_WAIT_S` of three seconds after the
+    holding is first seen, which is the time that the Cleanse of the bot and the mobs of the party have for a
+    hold that needs no blessing of its own. These three answers are owned by `SelectPaladinProtectionTarget()`,
+    `SelectPaladinLayOnHandsTarget()` and `SelectPaladinFreedomTarget()` for the party paladin and the battle
+    paladin alike; the battleground adds its own reason to leave the carrier of its flag out of the Protection.
 
 ## Tuning without compiling
 - `playerbot_gear_stat_weights(spec, stat, weight)` overrides single pairs only; everything without a row keeps

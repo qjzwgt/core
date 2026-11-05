@@ -1328,38 +1328,32 @@ void BattleBotAI::UpdateInCombatAI_Paladin()
         }
     }
 
-    if (Unit* pFriend = me->FindLowestHpFriendlyUnit(30.0f, 70, true, me))
+    // The blessings of an emergency: the Protection is for the caster of the group that is closest to death and
+    // can not stand a physical hit with armour or a pet of its own, and the Lay on Hands is kept for the tank of
+    // the group, which is the member that holds the flag bearers off. A Sacrifice is not used: the life that it
+    // moves onto a member is the life that the paladin then lacks for the healing of the others.
+    if (m_spells.paladin.pBlessingOfProtection)
     {
-        if (m_spells.paladin.pBlessingOfProtection &&
-           !IsPhysicalDamageClass(pFriend->GetClass()) &&
-           !pFriend->HasAura(AURA_WARSONG_FLAG) &&
-            CanTryToCastSpell(pFriend, m_spells.paladin.pBlessingOfProtection))
+        Player* pCaster = SelectPaladinProtectionTarget();
+        // The blessing is not put on the carrier of the flag of the battleground: while the immunity stands no
+        // one can take the flag from it, and a flag that never moves is worth nothing to either side.
+        if (pCaster &&
+            !pCaster->HasAura(AURA_WARSONG_FLAG) &&
+            CanTryToCastSpell(pCaster, m_spells.paladin.pBlessingOfProtection))
         {
-            if (DoCastSpell(pFriend, m_spells.paladin.pBlessingOfProtection) == SPELL_CAST_OK)
-                return;
-        }
-        if (m_spells.paladin.pBlessingOfSacrifice &&
-            pFriend->HasAura(AURA_WARSONG_FLAG) &&
-            CanTryToCastSpell(pFriend, m_spells.paladin.pBlessingOfSacrifice))
-        {
-            if (DoCastSpell(pFriend, m_spells.paladin.pBlessingOfSacrifice) == SPELL_CAST_OK)
-                return;
-        }
-        if (m_spells.paladin.pLayOnHands &&
-           (pFriend->GetHealthPercent() < 15.0f) &&
-            CanTryToCastSpell(pFriend, m_spells.paladin.pLayOnHands))
-        {
-            if (DoCastSpell(pFriend, m_spells.paladin.pLayOnHands) == SPELL_CAST_OK)
+            if (DoCastSpell(pCaster, m_spells.paladin.pBlessingOfProtection) == SPELL_CAST_OK)
                 return;
         }
     }
 
-    if (m_spells.paladin.pBlessingOfFreedom &&
-       (me->HasUnitState(UNIT_STATE_ROOT) || me->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED)) &&
-        CanTryToCastSpell(me, m_spells.paladin.pBlessingOfFreedom))
+    if (m_spells.paladin.pLayOnHands)
     {
-        if (DoCastSpell(me, m_spells.paladin.pBlessingOfFreedom) == SPELL_CAST_OK)
-            return;
+        Player* pTank = SelectPaladinLayOnHandsTarget();
+        if (pTank && CanTryToCastSpell(pTank, m_spells.paladin.pLayOnHands))
+        {
+            if (DoCastSpell(pTank, m_spells.paladin.pLayOnHands) == SPELL_CAST_OK)
+                return;
+        }
     }
 
     if (m_spells.paladin.pCleanse)
@@ -1371,6 +1365,20 @@ void BattleBotAI::UpdateInCombatAI_Paladin()
                 if (DoCastSpell(pFriend, m_spells.paladin.pCleanse) == SPELL_CAST_OK)
                     return;
             }
+        }
+    }
+
+    // The freedom of the member that stands held in place, which a paladin asks for the tank of the group while
+    // the group has one and for itself when the group has none. It stands after the Cleanse above, which answers
+    // the magic that holds a member before the blessing does, and the three seconds of the wait are what that
+    // Cleanse and the players about the member have to free it themselves.
+    if (m_spells.paladin.pBlessingOfFreedom)
+    {
+        Player* pMember = SelectPaladinFreedomTarget();
+        if (pMember && CanTryToCastSpell(pMember, m_spells.paladin.pBlessingOfFreedom))
+        {
+            if (DoCastSpell(pMember, m_spells.paladin.pBlessingOfFreedom) == SPELL_CAST_OK)
+                return;
         }
     }
 

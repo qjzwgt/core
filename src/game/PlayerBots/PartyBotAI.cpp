@@ -3518,27 +3518,26 @@ void PartyBotAI::UpdateInCombatAI_Paladin()
             return;
     }
 
-    if (Unit* pFriend = me->FindLowestHpFriendlyUnit(30.0f, 70, true, me))
+    // The blessings of an emergency: the Protection is for the caster of the group that is closest to death and
+    // can not stand a physical hit with armour or a pet of its own, and the Lay on Hands is kept for the tank of
+    // the group, which is the member that the party leans on. A Sacrifice is not used: the life that it moves
+    // onto a member is the life that the paladin then lacks for the healing of the party.
+    if (m_spells.paladin.pBlessingOfProtection)
     {
-        if (m_spells.paladin.pBlessingOfProtection &&
-           !IsPhysicalDamageClass(pFriend->GetClass()) &&
-            CanTryToCastSpell(pFriend, m_spells.paladin.pBlessingOfProtection))
+        Player* pCaster = SelectPaladinProtectionTarget();
+        if (pCaster && CanTryToCastSpell(pCaster, m_spells.paladin.pBlessingOfProtection))
         {
-            if (DoCastSpell(pFriend, m_spells.paladin.pBlessingOfProtection) == SPELL_CAST_OK)
+            if (DoCastSpell(pCaster, m_spells.paladin.pBlessingOfProtection) == SPELL_CAST_OK)
                 return;
         }
-        if (m_spells.paladin.pBlessingOfSacrifice &&
-           (me->GetHealthPercent() > 80.0f) &&
-            CanTryToCastSpell(pFriend, m_spells.paladin.pBlessingOfSacrifice))
+    }
+
+    if (m_spells.paladin.pLayOnHands)
+    {
+        Player* pTank = SelectPaladinLayOnHandsTarget();
+        if (pTank && CanTryToCastSpell(pTank, m_spells.paladin.pLayOnHands))
         {
-            if (DoCastSpell(pFriend, m_spells.paladin.pBlessingOfSacrifice) == SPELL_CAST_OK)
-                return;
-        }
-        if (m_spells.paladin.pLayOnHands &&
-           (pFriend->GetHealthPercent() < 15.0f) &&
-            CanTryToCastSpell(pFriend, m_spells.paladin.pLayOnHands))
-        {
-            if (DoCastSpell(pFriend, m_spells.paladin.pLayOnHands) == SPELL_CAST_OK)
+            if (DoCastSpell(pTank, m_spells.paladin.pLayOnHands) == SPELL_CAST_OK)
                 return;
         }
     }
@@ -3589,14 +3588,6 @@ void PartyBotAI::UpdateInCombatAI_Paladin()
     }
     else
     {
-        if (m_spells.paladin.pLayOnHands &&
-           (me->GetHealthPercent() < 15.0f) &&
-            CanTryToCastSpell(me, m_spells.paladin.pLayOnHands))
-        {
-            if (DoCastSpell(me, m_spells.paladin.pLayOnHands) == SPELL_CAST_OK)
-                return;
-        }
-
         bool const hasSeal = m_spells.paladin.pSeal && me->HasAura(m_spells.paladin.pSeal->Id);
 
         if (!hasSeal &&
@@ -3675,12 +3666,18 @@ void PartyBotAI::UpdateInCombatAI_Paladin()
         }
     }
 
-    if (m_spells.paladin.pBlessingOfFreedom &&
-       (me->HasUnitState(UNIT_STATE_ROOT) || me->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED)) &&
-        CanTryToCastSpell(me, m_spells.paladin.pBlessingOfFreedom))
+    // The freedom of the member that stands held in place, which a paladin asks for the tank of the group while
+    // the group has one and for itself when the group has none. The Cleanse of the bot stands above this: a
+    // party bot reaches the routine of its class only after CheckForDispelTargets(), and the three seconds of
+    // the wait are what that Cleanse and the mobs of the party have to answer the hold themselves.
+    if (m_spells.paladin.pBlessingOfFreedom)
     {
-        if (DoCastSpell(me, m_spells.paladin.pBlessingOfFreedom) == SPELL_CAST_OK)
-            return;
+        Player* pMember = SelectPaladinFreedomTarget();
+        if (pMember && CanTryToCastSpell(pMember, m_spells.paladin.pBlessingOfFreedom))
+        {
+            if (DoCastSpell(pMember, m_spells.paladin.pBlessingOfFreedom) == SPELL_CAST_OK)
+                return;
+        }
     }
 
     if (GetRole() != ROLE_HEALER &&
